@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -41,6 +42,7 @@ type apiConfig struct {
 	mu sync.RWMutex
 
 	requestsPool           chan struct{}
+	requestsPoolPtr        atomic.Pointer[chan struct{}]
 	clusterDeadline        time.Duration
 	listQuorum             string
 	corsAllowOrigins       []string
@@ -159,7 +161,9 @@ func (t *apiConfig) init(cfg api.Config, setDriveCounts []int, legacy bool) {
 		// but new requests will use the new limit.
 		// There will be a short overlap window,
 		// but this shouldn't last long.
-		t.requestsPool = make(chan struct{}, apiRequestsMaxPerNode)
+		pool := make(chan struct{}, apiRequestsMaxPerNode)
+		t.requestsPool = pool
+		t.requestsPoolPtr.Store(&pool)
 	}
 	listQuorum := cfg.ListQuorum
 	if listQuorum == "" {
@@ -296,6 +300,12 @@ func (t *apiConfig) getRequestsPoolCapacity() int {
 }
 
 func (t *apiConfig) getRequestsPool() chan struct{} {
+	// Hot path (every API request): read via atomic snapshot instead of
+	// taking the config RWMutex.
+	if p := t.requestsPoolPtr.Load(); p != nil {
+		return *p
+	}
+
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 

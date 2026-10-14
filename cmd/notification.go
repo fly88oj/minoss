@@ -109,8 +109,6 @@ func (g *NotificationGroup) Wait() []NotificationPeerErr {
 // The first call to return a non-nil error will be
 // collected in errs slice and returned by Wait().
 func (g *NotificationGroup) Go(ctx context.Context, f func() error, index int, addr xnet.Host) {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
 	g.workers.Take()
 
 	go func() {
@@ -140,7 +138,7 @@ func (g *NotificationGroup) Go(ctx context.Context, f func() error, index int, a
 
 				// Wait for a minimum of 100ms and dynamically increase this based on number of attempts.
 				if i < retryCount-1 {
-					time.Sleep(100*time.Millisecond + time.Duration(r.Float64()*float64(time.Second)))
+					time.Sleep(100*time.Millisecond + time.Duration(rand.Float64()*float64(time.Second)))
 					continue
 				}
 			}
