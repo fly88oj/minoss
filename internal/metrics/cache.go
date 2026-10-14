@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -41,15 +41,15 @@ type metricsCache struct {
 	nodesUpDown         *cachevalue.Cache[nodesOnline]
 }
 
-func newMetricsCache() *metricsCache {
+func newMetricsCache(d *Deps) *metricsCache {
 	return &metricsCache{
-		dataUsageInfo:       newDataUsageInfoCache(),
-		esetHealthResult:    newESetHealthResultCache(),
-		driveMetrics:        newDriveMetricsCache(),
-		memoryMetrics:       newMemoryMetricsCache(),
-		cpuMetrics:          newCPUMetricsCache(),
-		clusterDriveMetrics: newClusterStorageInfoCache(),
-		nodesUpDown:         newNodesUpDownCache(),
+		dataUsageInfo:       newDataUsageInfoCache(d),
+		esetHealthResult:    newESetHealthResultCache(d),
+		driveMetrics:        newDriveMetricsCache(d),
+		memoryMetrics:       newMemoryMetricsCache(d),
+		cpuMetrics:          newCPUMetricsCache(d),
+		clusterDriveMetrics: newClusterStorageInfoCache(d),
+		nodesUpDown:         newNodesUpDownCache(d),
 	}
 }
 
@@ -57,9 +57,9 @@ type nodesOnline struct {
 	Online, Offline int
 }
 
-func newNodesUpDownCache() *cachevalue.Cache[nodesOnline] {
+func newNodesUpDownCache(d *Deps) *cachevalue.Cache[nodesOnline] {
 	loadNodesUpDown := func(ctx context.Context) (v nodesOnline, err error) {
-		v.Online, v.Offline = globalNotificationSys.GetPeerOnlineCount()
+		v.Online, v.Offline = d.PeerOnlineCount()
 		return v, err
 	}
 	return cachevalue.NewFromFunc(1*time.Minute,
@@ -84,31 +84,19 @@ type storageMetrics struct {
 	onlineDrives, offlineDrives, totalDrives int
 }
 
-func newDataUsageInfoCache() *cachevalue.Cache[DataUsageInfo] {
+func newDataUsageInfoCache(d *Deps) *cachevalue.Cache[DataUsageInfo] {
 	loadDataUsage := func(ctx context.Context) (u DataUsageInfo, err error) {
-		objLayer := newObjectLayerFn()
-		if objLayer == nil {
-			return u, err
-		}
-
 		// Collect cluster level object metrics.
-		u, err = loadDataUsageFromBackend(GlobalContext, objLayer)
-		return u, err
+		return d.LoadDataUsage(ctx)
 	}
 	return cachevalue.NewFromFunc(1*time.Minute,
 		cachevalue.Opts{ReturnLastGood: true},
 		loadDataUsage)
 }
 
-func newESetHealthResultCache() *cachevalue.Cache[HealthResult] {
+func newESetHealthResultCache(d *Deps) *cachevalue.Cache[HealthResult] {
 	loadHealth := func(ctx context.Context) (r HealthResult, err error) {
-		objLayer := newObjectLayerFn()
-		if objLayer == nil {
-			return r, err
-		}
-
-		r = objLayer.Health(GlobalContext, HealthOptions{})
-		return r, err
+		return d.ClusterHealth(ctx)
 	}
 	return cachevalue.NewFromFunc(1*time.Minute,
 		cachevalue.Opts{ReturnLastGood: true},
@@ -149,7 +137,7 @@ func getDriveIOStatMetrics(ioStats madmin.DiskIOStats, duration time.Duration) (
 	return m
 }
 
-func newDriveMetricsCache() *cachevalue.Cache[storageMetrics] {
+func newDriveMetricsCache(d *Deps) *cachevalue.Cache[storageMetrics] {
 	var (
 		// prevDriveIOStats is used to calculate "per second"
 		// values for IOStat related disk metrics e.g. reads/sec.
@@ -159,24 +147,17 @@ func newDriveMetricsCache() *cachevalue.Cache[storageMetrics] {
 	)
 
 	loadDriveMetrics := func(ctx context.Context) (v storageMetrics, err error) {
-		objLayer := newObjectLayerFn()
-		if objLayer == nil {
-			return v, err
-		}
-
-		storageInfo := objLayer.LocalStorageInfo(GlobalContext, true)
-		onlineDrives, offlineDrives := getOnlineOfflineDisksStats(storageInfo.Disks)
-		totalDrives := onlineDrives.Merge(offlineDrives)
+		storageInfo, onlineDrives, offlineDrives, totalDrives := d.LocalStorageInfo(ctx)
 
 		v = storageMetrics{
 			storageInfo:   storageInfo,
-			onlineDrives:  onlineDrives.Sum(),
-			offlineDrives: offlineDrives.Sum(),
-			totalDrives:   totalDrives.Sum(),
+			onlineDrives:  onlineDrives,
+			offlineDrives: offlineDrives,
+			totalDrives:   totalDrives,
 			ioStats:       map[string]driveIOStatMetrics{},
 		}
 
-		currentStats := getCurrentDriveIOStats()
+		currentStats := d.getCurrentDriveIOStats()
 		now := time.Now().UTC()
 
 		prevDriveIOStatsMu.Lock()
@@ -203,14 +184,12 @@ func newDriveMetricsCache() *cachevalue.Cache[storageMetrics] {
 		loadDriveMetrics)
 }
 
-func newCPUMetricsCache() *cachevalue.Cache[madmin.CPUMetrics] {
+func newCPUMetricsCache(d *Deps) *cachevalue.Cache[madmin.CPUMetrics] {
 	loadCPUMetrics := func(ctx context.Context) (v madmin.CPUMetrics, err error) {
 		types := madmin.MetricsCPU
 
-		m := collectLocalMetrics(types, collectMetricsOpts{
-			hosts: map[string]struct{}{
-				globalLocalNodeName: {},
-			},
+		m := d.CollectLocalMetrics(types, map[string]struct{}{
+			d.LocalNodeName: {},
 		})
 
 		for _, hm := range m.ByHost {
@@ -228,14 +207,12 @@ func newCPUMetricsCache() *cachevalue.Cache[madmin.CPUMetrics] {
 		loadCPUMetrics)
 }
 
-func newMemoryMetricsCache() *cachevalue.Cache[madmin.MemInfo] {
+func newMemoryMetricsCache(d *Deps) *cachevalue.Cache[madmin.MemInfo] {
 	loadMemoryMetrics := func(ctx context.Context) (v madmin.MemInfo, err error) {
 		types := madmin.MetricsMem
 
-		m := collectLocalMetrics(types, collectMetricsOpts{
-			hosts: map[string]struct{}{
-				globalLocalNodeName: {},
-			},
+		m := d.CollectLocalMetrics(types, map[string]struct{}{
+			d.LocalNodeName: {},
 		})
 
 		for _, hm := range m.ByHost {
@@ -253,20 +230,14 @@ func newMemoryMetricsCache() *cachevalue.Cache[madmin.MemInfo] {
 		loadMemoryMetrics)
 }
 
-func newClusterStorageInfoCache() *cachevalue.Cache[storageMetrics] {
+func newClusterStorageInfoCache(d *Deps) *cachevalue.Cache[storageMetrics] {
 	loadStorageInfo := func(ctx context.Context) (v storageMetrics, err error) {
-		objLayer := newObjectLayerFn()
-		if objLayer == nil {
-			return storageMetrics{}, nil
-		}
-		storageInfo := objLayer.StorageInfo(GlobalContext, true)
-		onlineDrives, offlineDrives := getOnlineOfflineDisksStats(storageInfo.Disks)
-		totalDrives := onlineDrives.Merge(offlineDrives)
+		storageInfo, onlineDrives, offlineDrives, totalDrives := d.ClusterStorageInfo(ctx)
 		v = storageMetrics{
 			storageInfo:   storageInfo,
-			onlineDrives:  onlineDrives.Sum(),
-			offlineDrives: offlineDrives.Sum(),
-			totalDrives:   totalDrives.Sum(),
+			onlineDrives:  onlineDrives,
+			offlineDrives: offlineDrives,
+			totalDrives:   totalDrives,
 		}
 		return v, err
 	}

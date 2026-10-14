@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -89,9 +89,9 @@ var (
 // This includes node level S3 HTTP metrics.
 //
 // This function currently ignores `opts`.
-func loadAPIRequestsHTTPMetrics(ctx context.Context, m MetricValues, _ *metricsCache) error {
+func (d *Deps) loadAPIRequestsHTTPMetrics(ctx context.Context, m MetricValues, _ *metricsCache) error {
 	// Collect node level S3 HTTP metrics.
-	httpStats := globalHTTPStats.toServerHTTPStats(false)
+	httpStats := d.HTTPStats()
 
 	// Currently we only collect S3 API related stats, so we set the "type"
 	// label to "s3".
@@ -103,22 +103,22 @@ func loadAPIRequestsHTTPMetrics(ctx context.Context, m MetricValues, _ *metricsC
 	m.Set(apiRequestsWaitingTotal, float64(httpStats.S3RequestsInQueue), "type", "s3")
 	m.Set(apiRequestsIncomingTotal, float64(httpStats.S3RequestsIncoming), "type", "s3")
 
-	for name, value := range httpStats.CurrentS3Requests.APIStats {
+	for name, value := range httpStats.CurrentS3Requests {
 		m.Set(apiRequestsInFlightTotal, float64(value), "name", name, "type", "s3")
 	}
-	for name, value := range httpStats.TotalS3Requests.APIStats {
+	for name, value := range httpStats.TotalS3Requests {
 		m.Set(apiRequestsTotal, float64(value), "name", name, "type", "s3")
 	}
-	for name, value := range httpStats.TotalS3Errors.APIStats {
+	for name, value := range httpStats.TotalS3Errors {
 		m.Set(apiRequestsErrorsTotal, float64(value), "name", name, "type", "s3")
 	}
-	for name, value := range httpStats.TotalS35xxErrors.APIStats {
+	for name, value := range httpStats.TotalS35xxErrors {
 		m.Set(apiRequests5xxErrorsTotal, float64(value), "name", name, "type", "s3")
 	}
-	for name, value := range httpStats.TotalS34xxErrors.APIStats {
+	for name, value := range httpStats.TotalS34xxErrors {
 		m.Set(apiRequests4xxErrorsTotal, float64(value), "name", name, "type", "s3")
 	}
-	for name, value := range httpStats.TotalS3Canceled.APIStats {
+	for name, value := range httpStats.TotalS3Canceled {
 		m.Set(apiRequestsCanceledTotal, float64(value), "name", name, "type", "s3")
 	}
 	return nil
@@ -127,10 +127,10 @@ func loadAPIRequestsHTTPMetrics(ctx context.Context, m MetricValues, _ *metricsC
 // loadAPIRequestsTTFBMetrics - loads S3 TTFB metrics.
 //
 // This is a `MetricsLoaderFn`.
-func loadAPIRequestsTTFBMetrics(ctx context.Context, m MetricValues, _ *metricsCache) error {
+func (d *Deps) loadAPIRequestsTTFBMetrics(ctx context.Context, m MetricValues, _ *metricsCache) error {
 	renameLabels := map[string]string{"api": "name"}
 	labelsFilter := map[string]set.StringSet{}
-	m.SetHistogram(apiRequestsTTFBSecondsDistribution, httpRequestsDuration, labelsFilter, renameLabels, nil,
+	m.SetHistogram(apiRequestsTTFBSecondsDistribution, d.TTFBHistogram(), labelsFilter, renameLabels, nil,
 		"type", "s3")
 	return nil
 }
@@ -138,10 +138,10 @@ func loadAPIRequestsTTFBMetrics(ctx context.Context, m MetricValues, _ *metricsC
 // loadAPIRequestsNetworkMetrics - loads S3 network metrics.
 //
 // This is a `MetricsLoaderFn`.
-func loadAPIRequestsNetworkMetrics(ctx context.Context, m MetricValues, _ *metricsCache) error {
-	connStats := globalConnStats.toServerConnStats()
-	m.Set(apiTrafficSentBytes, float64(connStats.s3OutputBytes), "type", "s3")
-	m.Set(apiTrafficRecvBytes, float64(connStats.s3InputBytes), "type", "s3")
+func (d *Deps) loadAPIRequestsNetworkMetrics(ctx context.Context, m MetricValues, _ *metricsCache) error {
+	connStats := d.ConnStats()
+	m.Set(apiTrafficSentBytes, float64(connStats.S3OutputBytes), "type", "s3")
+	m.Set(apiTrafficRecvBytes, float64(connStats.S3InputBytes), "type", "s3")
 	return nil
 }
 
@@ -173,11 +173,11 @@ var (
 // This is a `MetricsLoaderFn`.
 //
 // This includes bucket level S3 HTTP metrics and S3 network in/out metrics.
-func loadBucketAPIHTTPMetrics(ctx context.Context, m MetricValues, _ *metricsCache, buckets []string) error {
+func (d *Deps) loadBucketAPIHTTPMetrics(ctx context.Context, m MetricValues, _ *metricsCache, buckets []string) error {
 	if len(buckets) == 0 {
 		return nil
 	}
-	for bucket, inOut := range globalBucketConnStats.getBucketS3InOutBytes(buckets) {
+	for bucket, inOut := range d.BucketConnStats(buckets) {
 		recvBytes := inOut.In
 		if recvBytes > 0 {
 			m.Set(apiTrafficSentBytes, float64(recvBytes), "bucket", bucket, "type", "s3")
@@ -187,24 +187,24 @@ func loadBucketAPIHTTPMetrics(ctx context.Context, m MetricValues, _ *metricsCac
 			m.Set(apiTrafficRecvBytes, float64(sentBytes), "bucket", bucket, "type", "s3")
 		}
 
-		httpStats := globalBucketHTTPStats.load(bucket)
-		for k, v := range httpStats.currentS3Requests.Load(false) {
+		httpStats := d.BucketHTTPStats(bucket)
+		for k, v := range httpStats.CurrentS3Requests {
 			m.Set(apiRequestsInFlightTotal, float64(v), "bucket", bucket, "name", k, "type", "s3")
 		}
 
-		for k, v := range httpStats.totalS3Requests.Load(false) {
+		for k, v := range httpStats.TotalS3Requests {
 			m.Set(apiRequestsTotal, float64(v), "bucket", bucket, "name", k, "type", "s3")
 		}
 
-		for k, v := range httpStats.totalS3Canceled.Load(false) {
+		for k, v := range httpStats.TotalS3Canceled {
 			m.Set(apiRequestsCanceledTotal, float64(v), "bucket", bucket, "name", k, "type", "s3")
 		}
 
-		for k, v := range httpStats.totalS34xxErrors.Load(false) {
+		for k, v := range httpStats.TotalS34xxErrors {
 			m.Set(apiRequests4xxErrorsTotal, float64(v), "bucket", bucket, "name", k, "type", "s3")
 		}
 
-		for k, v := range httpStats.totalS35xxErrors.Load(false) {
+		for k, v := range httpStats.TotalS35xxErrors {
 			m.Set(apiRequests5xxErrorsTotal, float64(v), "bucket", bucket, "name", k, "type", "s3")
 		}
 	}
@@ -215,10 +215,10 @@ func loadBucketAPIHTTPMetrics(ctx context.Context, m MetricValues, _ *metricsCac
 // loadBucketAPITTFBMetrics - loads bucket S3 TTFB metrics.
 //
 // This is a `MetricsLoaderFn`.
-func loadBucketAPITTFBMetrics(ctx context.Context, m MetricValues, _ *metricsCache, buckets []string) error {
+func (d *Deps) loadBucketAPITTFBMetrics(ctx context.Context, m MetricValues, _ *metricsCache, buckets []string) error {
 	renameLabels := map[string]string{"api": "name"}
 	labelsFilter := map[string]set.StringSet{}
-	m.SetHistogram(apiRequestsTTFBSecondsDistribution, bucketHTTPRequestsDuration, labelsFilter, renameLabels,
+	m.SetHistogram(apiRequestsTTFBSecondsDistribution, d.BucketTTFBHistogram(), labelsFilter, renameLabels,
 		buckets, "type", "s3")
 	return nil
 }

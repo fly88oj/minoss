@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -47,15 +47,15 @@ var (
 // loadNetworkInternodeMetrics - reads internode network metrics.
 //
 // This is a `MetricsLoaderFn`.
-func loadNetworkInternodeMetrics(ctx context.Context, m MetricValues, _ *metricsCache) error {
-	connStats := globalConnStats.toServerConnStats()
+func (d *Deps) loadNetworkInternodeMetrics(ctx context.Context, m MetricValues, _ *metricsCache) error {
+	connStats := d.ConnStats()
 	rpcStats := rest.GetRPCStats()
-	if globalIsDistErasure {
+	if d.IsDistErasure {
 		m.Set(internodeErrorsTotal, float64(rpcStats.Errs))
 		m.Set(internodeDialErrorsTotal, float64(rpcStats.DialErrs))
 		m.Set(internodeDialAvgTimeNanos, float64(rpcStats.DialAvgDuration))
-		m.Set(internodeSentBytesTotal, float64(connStats.internodeOutputBytes))
-		m.Set(internodeRecvBytesTotal, float64(connStats.internodeInputBytes))
+		m.Set(internodeSentBytesTotal, float64(connStats.InternodeOutputBytes))
+		m.Set(internodeRecvBytesTotal, float64(connStats.InternodeInputBytes))
 	}
 	return nil
 }

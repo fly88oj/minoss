@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -108,45 +108,43 @@ var (
 
 // loadBucketReplicationMetrics - `BucketMetricsLoaderFn` for bucket replication metrics
 // such as latency and sent bytes.
-func loadBucketReplicationMetrics(ctx context.Context, m MetricValues, c *metricsCache, buckets []string) error {
-	if globalSiteReplicationSys.isEnabled() {
+func (d *Deps) loadBucketReplicationMetrics(ctx context.Context, m MetricValues, c *metricsCache, buckets []string) error {
+	if d.SiteReplicationEnabled() {
 		return nil
 	}
 
-	dataUsageInfo, err := c.dataUsageInfo.Get()
-	if err != nil {
-		metricsLogIf(ctx, err)
-		return nil
+	usage := map[string]BucketUsage{}
+	if dataUsageInfo, err := c.dataUsageInfo.Get(); err == nil {
+		usage = dataUsageInfo.BucketsUsage
 	}
-
-	bucketReplStats := globalReplicationStats.Load().getAllLatest(dataUsageInfo.BucketsUsage)
+	bucketReplStats := d.BucketReplicationStats(usage)
 	for _, bucket := range buckets {
 		if s, ok := bucketReplStats[bucket]; ok {
-			stats := s.ReplicationStats
-			if stats.hasReplicationUsage() {
-				for arn, stat := range stats.Stats {
-					labels := []string{bucketL, bucket, targetArnL, arn}
-					m.Set(bucketReplLastHrFailedBytes, float64(stat.Failed.LastHour.Bytes), labels...)
-					m.Set(bucketReplLastHrFailedCount, float64(stat.Failed.LastHour.Count), labels...)
-					m.Set(bucketReplLastMinFailedBytes, float64(stat.Failed.LastMinute.Bytes), labels...)
-					m.Set(bucketReplLastMinFailedCount, float64(stat.Failed.LastMinute.Count), labels...)
-					m.Set(bucketReplProxiedDeleteTaggingRequestsTotal, float64(s.ProxyStats.RmvTagTotal), labels...)
-					m.Set(bucketReplProxiedGetRequestsFailures, float64(s.ProxyStats.GetFailedTotal), labels...)
-					m.Set(bucketReplProxiedGetRequestsTotal, float64(s.ProxyStats.GetTotal), labels...)
-					m.Set(bucketReplProxiedGetTaggingRequestsFailures, float64(s.ProxyStats.GetTagFailedTotal), labels...)
-					m.Set(bucketReplProxiedGetTaggingRequestsTotal, float64(s.ProxyStats.GetTagTotal), labels...)
-					m.Set(bucketReplProxiedHeadRequestsFailures, float64(s.ProxyStats.HeadFailedTotal), labels...)
-					m.Set(bucketReplProxiedHeadRequestsTotal, float64(s.ProxyStats.HeadTotal), labels...)
-					m.Set(bucketReplProxiedPutTaggingRequestsFailures, float64(s.ProxyStats.PutTagFailedTotal), labels...)
-					m.Set(bucketReplProxiedPutTaggingRequestsTotal, float64(s.ProxyStats.PutTagTotal), labels...)
-					m.Set(bucketReplSentCount, float64(stat.ReplicatedCount), labels...)
-					m.Set(bucketReplTotalFailedBytes, float64(stat.Failed.Totals.Bytes), labels...)
-					m.Set(bucketReplTotalFailedCount, float64(stat.Failed.Totals.Count), labels...)
-					m.Set(bucketReplProxiedDeleteTaggingRequestsFailures, float64(s.ProxyStats.RmvTagFailedTotal), labels...)
-					m.Set(bucketReplSentBytes, float64(stat.ReplicatedSize), labels...)
+			if !s.HasUsage {
+				continue
+			}
+			for arn, stat := range s.Targets {
+				labels := []string{bucketL, bucket, targetArnL, arn}
+				m.Set(bucketReplLastHrFailedBytes, float64(stat.FailedLastHrBytes), labels...)
+				m.Set(bucketReplLastHrFailedCount, float64(stat.FailedLastHrCount), labels...)
+				m.Set(bucketReplLastMinFailedBytes, float64(stat.FailedLastMinBytes), labels...)
+				m.Set(bucketReplLastMinFailedCount, float64(stat.FailedLastMinCount), labels...)
+				m.Set(bucketReplProxiedDeleteTaggingRequestsTotal, float64(stat.Proxy.RmvTagTotal), labels...)
+				m.Set(bucketReplProxiedGetRequestsFailures, float64(stat.Proxy.GetFailedTotal), labels...)
+				m.Set(bucketReplProxiedGetRequestsTotal, float64(stat.Proxy.GetTotal), labels...)
+				m.Set(bucketReplProxiedGetTaggingRequestsFailures, float64(stat.Proxy.GetTagFailedTotal), labels...)
+				m.Set(bucketReplProxiedGetTaggingRequestsTotal, float64(stat.Proxy.GetTagTotal), labels...)
+				m.Set(bucketReplProxiedHeadRequestsFailures, float64(stat.Proxy.HeadFailedTotal), labels...)
+				m.Set(bucketReplProxiedHeadRequestsTotal, float64(stat.Proxy.HeadTotal), labels...)
+				m.Set(bucketReplProxiedPutTaggingRequestsFailures, float64(stat.Proxy.PutTagFailedTotal), labels...)
+				m.Set(bucketReplProxiedPutTaggingRequestsTotal, float64(stat.Proxy.PutTagTotal), labels...)
+				m.Set(bucketReplSentCount, float64(stat.ReplicatedCount), labels...)
+				m.Set(bucketReplTotalFailedBytes, float64(stat.FailedTotalBytes), labels...)
+				m.Set(bucketReplTotalFailedCount, float64(stat.FailedTotalCount), labels...)
+				m.Set(bucketReplProxiedDeleteTaggingRequestsFailures, float64(stat.Proxy.RmvTagFailedTotal), labels...)
+				m.Set(bucketReplSentBytes, float64(stat.ReplicatedSize), labels...)
 
-					SetHistogramValues(m, bucketReplLatencyMs, stat.Latency.getUploadLatency(), bucketL, bucket, operationL, "upload", targetArnL, arn)
-				}
+				SetHistogramValues(m, bucketReplLatencyMs, stat.UploadLatencyMs, bucketL, bucket, operationL, "upload", targetArnL, arn)
 			}
 		}
 	}

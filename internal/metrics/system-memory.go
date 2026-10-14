@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -44,10 +44,10 @@ var (
 )
 
 // loadMemoryMetrics - `MetricsLoaderFn` for node memory metrics.
-func loadMemoryMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
+func (d *Deps) loadMemoryMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
 	memMetrics, err := c.memoryMetrics.Get()
 	if err != nil {
-		metricsLogIf(ctx, err)
+		d.LogIf(ctx, err)
 		return err
 	}
 

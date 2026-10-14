@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -80,7 +80,7 @@ func b2f(v bool) float64 {
 
 // loadClusterErasureSetMetrics - `MetricsLoaderFn` for cluster storage erasure
 // set metrics.
-func loadClusterErasureSetMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
+func (d *Deps) loadClusterErasureSetMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
 	result, _ := c.esetHealthResult.Get()
 
 	m.Set(erasureSetOverallWriteQuorum, float64(result.WriteQuorum))

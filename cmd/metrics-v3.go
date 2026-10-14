@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 MinIO, Inc.
+// Copyright (c) 2015-2026 MinIO, Inc.
 //
 // This file is part of MinIO Object Storage stack
 //
@@ -15,473 +15,335 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// Wiring for the metrics v3 subsystem: internal/metrics owns the
+// exposition machinery; this file adapts server state (globals and cmd
+// types) into the narrow metrics.Deps seam.
+
 package cmd
 
 import (
-	"slices"
-	"strings"
+	"context"
+	"sync/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
+
+	"github.com/minio/madmin-go/v3"
+	idplugin "github.com/minio/minio/internal/config/identity/plugin"
+	"github.com/minio/minio/internal/metrics"
 )
 
-// Collector paths.
-//
-// These are paths under the top-level /minio/metrics/v3 metrics endpoint. Each
-// of these paths returns a set of V3 metrics.
-//
-// Per-bucket metrics endpoints always start with /bucket and the bucket name is
-// appended to the path. e.g. if the collector path is /bucket/api, the endpoint
-// for the bucket "mybucket" would be /minio/metrics/v3/bucket/api/mybucket
-const (
-	apiRequestsCollectorPath collectorPath = "/api/requests"
+// newMetricsDeps builds the dependency bundle for the metrics v3 server
+// from package-level server state. Called once when the router is
+// registered; every subsystem may still be nil/disabled at that point.
+func newMetricsDeps() *metrics.Deps {
+	return &metrics.Deps{
+		Ctx:           GlobalContext,
+		LocalNodeName: globalLocalNodeName,
+		LocalPoolIdx:  globalLocalPoolIdx,
+		IsDistErasure: globalIsDistErasure,
+		BootTime:      globalBootTime,
 
-	bucketAPICollectorPath         collectorPath = "/bucket/api"
-	bucketReplicationCollectorPath collectorPath = "/bucket/replication"
+		LogIf: func(ctx context.Context, err error, tags ...any) {
+			metricsLogIf(ctx, err, tags...)
+		},
 
-	systemNetworkInternodeCollectorPath collectorPath = "/system/network/internode"
-	systemDriveCollectorPath            collectorPath = "/system/drive"
-	systemMemoryCollectorPath           collectorPath = "/system/memory"
-	systemCPUCollectorPath              collectorPath = "/system/cpu"
-	systemProcessCollectorPath          collectorPath = "/system/process"
+		HTTPStats: func() metrics.ServerHTTPStats {
+			return toMetricsHTTPStats(globalHTTPStats.toServerHTTPStats(false))
+		},
+		ConnStats: func() metrics.ServerConnStats {
+			cs := globalConnStats.toServerConnStats()
+			return metrics.ServerConnStats{
+				S3InputBytes:         cs.s3InputBytes,
+				S3OutputBytes:        cs.s3OutputBytes,
+				InternodeInputBytes:  cs.internodeInputBytes,
+				InternodeOutputBytes: cs.internodeOutputBytes,
+			}
+		},
+		BucketConnStats: func(buckets []string) map[string]metrics.InOutBytes {
+			out := make(map[string]metrics.InOutBytes)
+			for b, v := range globalBucketConnStats.getBucketS3InOutBytes(buckets) {
+				out[b] = metrics.InOutBytes{In: v.In, Out: v.Out}
+			}
+			return out
+		},
+		BucketHTTPStats: func(bucket string) metrics.BucketHTTPStats {
+			hs := globalBucketHTTPStats.load(bucket)
+			return metrics.BucketHTTPStats{
+				CurrentS3Requests: hs.currentS3Requests.Load(false),
+				TotalS3Requests:   hs.totalS3Requests.Load(false),
+				TotalS3Canceled:   hs.totalS3Canceled.Load(false),
+				TotalS34xxErrors:  hs.totalS34xxErrors.Load(false),
+				TotalS35xxErrors:  hs.totalS35xxErrors.Load(false),
+			}
+		},
+		TTFBHistogram:       func() *prometheus.HistogramVec { return httpRequestsDuration },
+		BucketTTFBHistogram: func() *prometheus.HistogramVec { return bucketHTTPRequestsDuration },
 
-	debugGoCollectorPath collectorPath = "/debug/go"
+		PeerOnlineCount: func() (online, offline int) {
+			if globalNotificationSys == nil {
+				return 0, 0
+			}
+			return globalNotificationSys.GetPeerOnlineCount()
+		},
+		LoadDataUsage: func(ctx context.Context) (metrics.DataUsageInfo, error) {
+			objLayer := newObjectLayerFn()
+			if objLayer == nil {
+				return metrics.DataUsageInfo{}, nil
+			}
+			dui, err := loadDataUsageFromBackend(ctx, objLayer)
+			if err != nil {
+				return metrics.DataUsageInfo{}, err
+			}
+			return toMetricsDataUsageInfo(dui), nil
+		},
+		ClusterHealth: func(ctx context.Context) (metrics.HealthResult, error) {
+			objLayer := newObjectLayerFn()
+			if objLayer == nil {
+				return metrics.HealthResult{}, nil
+			}
+			hr := objLayer.Health(ctx, HealthOptions{})
+			out := metrics.HealthResult{
+				Healthy:     hr.Healthy,
+				WriteQuorum: hr.WriteQuorum,
+			}
+			for _, es := range hr.ESHealth {
+				out.ESHealth = append(out.ESHealth, metrics.ESHealth{
+					Healthy:       es.Healthy,
+					PoolID:        es.PoolID,
+					SetID:         es.SetID,
+					ReadQuorum:    es.ReadQuorum,
+					WriteQuorum:   es.WriteQuorum,
+					HealthyDrives: es.HealthyDrives,
+					HealingDrives: es.HealingDrives,
+				})
+			}
+			return out, nil
+		},
+		LocalStorageInfo: func(ctx context.Context) (si madmin.StorageInfo, online, offline, total int) {
+			objLayer := newObjectLayerFn()
+			if objLayer == nil {
+				return
+			}
+			si = objLayer.LocalStorageInfo(ctx, true)
+			on, off := getOnlineOfflineDisksStats(si.Disks)
+			return si, on.Sum(), off.Sum(), on.Merge(off).Sum()
+		},
+		ClusterStorageInfo: func(ctx context.Context) (si madmin.StorageInfo, online, offline, total int) {
+			objLayer := newObjectLayerFn()
+			if objLayer == nil {
+				return
+			}
+			si = objLayer.StorageInfo(ctx, true)
+			on, off := getOnlineOfflineDisksStats(si.Disks)
+			return si, on.Sum(), off.Sum(), on.Merge(off).Sum()
+		},
+		CollectLocalMetrics: func(types madmin.MetricType, hosts map[string]struct{}) madmin.RealtimeMetrics {
+			return collectLocalMetrics(types, collectMetricsOpts{hosts: hosts})
+		},
 
-	clusterHealthCollectorPath       collectorPath = "/cluster/health"
-	clusterUsageObjectsCollectorPath collectorPath = "/cluster/usage/objects"
-	clusterUsageBucketsCollectorPath collectorPath = "/cluster/usage/buckets"
-	clusterErasureSetCollectorPath   collectorPath = "/cluster/erasure-set"
-	clusterIAMCollectorPath          collectorPath = "/cluster/iam"
-	clusterConfigCollectorPath       collectorPath = "/cluster/config"
+		IAMStats: func() (lastSyncMillis, lastSyncUnixNano, failures, successes uint64) {
+			if globalIAMSys == nil {
+				return 0, 0, 0, 0
+			}
+			return atomic.LoadUint64(&globalIAMSys.LastRefreshDurationMilliseconds),
+				atomic.LoadUint64(&globalIAMSys.LastRefreshTimeUnixNano),
+				atomic.LoadUint64(&globalIAMSys.TotalRefreshFailures),
+				atomic.LoadUint64(&globalIAMSys.TotalRefreshSuccesses)
+		},
+		AuthNPluginMetrics: func() (m idplugin.Metrics) {
+			globalAuthPluginMutex.Lock()
+			p := globalAuthNPlugin
+			globalAuthPluginMutex.Unlock()
+			if p == nil {
+				return m
+			}
+			return p.Metrics()
+		},
+		BucketQuota: func(ctx context.Context, bucket string) (*madmin.BucketQuota, error) {
+			return globalBucketQuotaSys.Get(ctx, bucket)
+		},
+		SiteReplicationEnabled: globalSiteReplicationSys.isEnabled,
+		ScannerLifetime: func(operation string) uint64 {
+			var m scannerMetric
+			switch operation {
+			case metrics.ScannerScanBucketDrive:
+				m = scannerMetricScanBucketDrive
+			case metrics.ScannerScanFolder:
+				m = scannerMetricScanFolder
+			case metrics.ScannerScanObject:
+				m = scannerMetricScanObject
+			case metrics.ScannerApplyVersion:
+				m = scannerMetricApplyVersion
+			case metrics.ScannerILM:
+				m = scannerMetricILM
+			default:
+				return 0
+			}
+			return globalScannerMetrics.lifetime(m)
+		},
+		ScannerActiveDrives: globalScannerMetrics.activeDrives,
+		ExpiryPendingTasks: func() int {
+			if globalExpiryState == nil {
+				return 0
+			}
+			return globalExpiryState.PendingTasks()
+		},
+		TransitionTasks: func() (active, pending, missed int) {
+			if globalTransitionState == nil {
+				return 0, 0, 0
+			}
+			return int(globalTransitionState.ActiveTasks()), globalTransitionState.PendingTasks(), int(globalTransitionState.MissedImmediateTasks())
+		},
+		LockStats: func() (reads, writes int64) {
+			if globalLockServer == nil {
+				return 0, 0
+			}
+			st := globalLockServer.stats()
+			return int64(st.Reads), int64(st.Writes)
+		},
+		EventTargetStats: func() metrics.EventTargetStats {
+			if globalEventNotifier == nil {
+				return metrics.EventTargetStats{}
+			}
+			st := globalEventNotifier.targetList.Stats()
+			return metrics.EventTargetStats{
+				CurrentSendCalls:  st.CurrentSendCalls,
+				EventsErrorsTotal: st.EventsErrorsTotal,
+				TotalEvents:       st.TotalEvents,
+				EventsSkipped:     st.EventsSkipped,
+			}
+		},
+		CPUAvg: func() (idle, iowait float64, ok bool) {
+			resourceMetricsMapMu.RLock()
+			defer resourceMetricsMapMu.RUnlock()
+			cpu, found := resourceMetricsMap[cpuSubsystem]
+			if !found {
+				return 0, 0, false
+			}
+			idleM, ok1 := cpu[getResourceKey(cpuIdle, nil)]
+			iowaitM, ok2 := cpu[getResourceKey(cpuIOWait, nil)]
+			if !ok1 || !ok2 {
+				return 0, 0, false
+			}
+			return idleM.Avg, iowaitM.Avg, true
+		},
+		ClusterReplicationQueue: func() *metrics.ReplQueueSummary {
+			st := globalReplicationStats.Load()
+			if st == nil {
+				return nil
+			}
+			qs := st.getNodeQueueStatsSummary()
+			out := &metrics.ReplQueueSummary{
+				AvgBytes:  uint64(qs.QStats.Avg.Bytes),
+				AvgCount:  uint64(qs.QStats.Avg.Count),
+				MaxBytes:  uint64(qs.QStats.Max.Bytes),
+				MaxCount:  uint64(qs.QStats.Max.Count),
+				CurrBytes: uint64(qs.QStats.Curr.Bytes),
+				CurrCount: uint64(qs.QStats.Curr.Count),
 
-	ilmCollectorPath           collectorPath = "/ilm"
-	auditCollectorPath         collectorPath = "/audit"
-	loggerWebhookCollectorPath collectorPath = "/logger/webhook"
-	replicationCollectorPath   collectorPath = "/replication"
-	notificationCollectorPath  collectorPath = "/notification"
-	scannerCollectorPath       collectorPath = "/scanner"
-)
+				AvgActiveWorkers:  float64(qs.ActiveWorkers.Avg),
+				CurrActiveWorkers: qs.ActiveWorkers.Curr,
+				MaxActiveWorkers:  qs.ActiveWorkers.Max,
 
-const (
-	clusterBasePath = "/cluster"
-)
-
-type metricsV3Collection struct {
-	mgMap       map[collectorPath]*MetricsGroup
-	bucketMGMap map[collectorPath]*MetricsGroup
-
-	// Gatherers for non-bucket MetricsGroup's
-	mgGatherers map[collectorPath]prometheus.Gatherer
-
-	collectorPaths []collectorPath
+				RecentBacklog: qs.MRFStats.LastFailedCount,
+			}
+			if tots, found := qs.XferStats[Total]; found {
+				out.HasTransfer = true
+				out.AvgTransfer = tots.Avg
+				out.CurrTransfer = tots.Curr
+				out.PeakTransfer = tots.Peak
+			}
+			return out
+		},
+		BucketReplicationStats: func(usage map[string]metrics.BucketUsage) map[string]metrics.BucketReplicationStats {
+			st := globalReplicationStats.Load()
+			if st == nil {
+				return nil
+			}
+			cmdUsage := make(map[string]BucketUsageInfo, len(usage))
+			for b, u := range usage {
+				cmdUsage[b] = BucketUsageInfo{
+					Size:                    u.Size,
+					ObjectsCount:            u.ObjectsCount,
+					VersionsCount:           u.VersionsCount,
+					DeleteMarkersCount:      u.DeleteMarkersCount,
+					ObjectSizesHistogram:    u.ObjectSizesHistogram,
+					ObjectVersionsHistogram: u.ObjectVersionsHistogram,
+				}
+			}
+			out := make(map[string]metrics.BucketReplicationStats)
+			for bucket, bs := range st.getAllLatest(cmdUsage) {
+				v := metrics.BucketReplicationStats{
+					HasUsage: bs.ReplicationStats.hasReplicationUsage(),
+					Targets:  make(map[string]metrics.BucketReplTargetStats, len(bs.ReplicationStats.Stats)),
+				}
+				for arn, stat := range bs.ReplicationStats.Stats {
+					v.Targets[arn] = metrics.BucketReplTargetStats{
+						FailedLastHrBytes:  uint64(stat.Failed.LastHour.Bytes),
+						FailedLastHrCount:  uint64(stat.Failed.LastHour.Count),
+						FailedLastMinBytes: uint64(stat.Failed.LastMinute.Bytes),
+						FailedLastMinCount: uint64(stat.Failed.LastMinute.Count),
+						FailedTotalBytes:   uint64(stat.Failed.Totals.Bytes),
+						FailedTotalCount:   uint64(stat.Failed.Totals.Count),
+						ReplicatedCount:    uint64(stat.ReplicatedCount),
+						ReplicatedSize:     uint64(stat.ReplicatedSize),
+						UploadLatencyMs:    stat.Latency.getUploadLatency(),
+						Proxy: metrics.ProxyStats{
+							GetFailedTotal:    bs.ProxyStats.GetFailedTotal,
+							GetTotal:          bs.ProxyStats.GetTotal,
+							GetTagFailedTotal: bs.ProxyStats.GetTagFailedTotal,
+							GetTagTotal:       bs.ProxyStats.GetTagTotal,
+							HeadFailedTotal:   bs.ProxyStats.HeadFailedTotal,
+							HeadTotal:         bs.ProxyStats.HeadTotal,
+							PutTagFailedTotal: bs.ProxyStats.PutTagFailedTotal,
+							PutTagTotal:       bs.ProxyStats.PutTagTotal,
+							RmvTagFailedTotal: bs.ProxyStats.RmvTagFailedTotal,
+							RmvTagTotal:       bs.ProxyStats.RmvTagTotal,
+						},
+					}
+				}
+				out[bucket] = v
+			}
+			return out
+		},
+	}
 }
 
-func newMetricGroups(r *prometheus.Registry) *metricsV3Collection {
-	// Create all metric groups.
-	apiRequestsMG := NewMetricsGroup(apiRequestsCollectorPath,
-		[]MetricDescriptor{
-			apiRejectedAuthTotalMD,
-			apiRejectedHeaderTotalMD,
-			apiRejectedTimestampTotalMD,
-			apiRejectedInvalidTotalMD,
-
-			apiRequestsWaitingTotalMD,
-			apiRequestsIncomingTotalMD,
-			apiRequestsInFlightTotalMD,
-			apiRequestsTotalMD,
-			apiRequestsErrorsTotalMD,
-			apiRequests5xxErrorsTotalMD,
-			apiRequests4xxErrorsTotalMD,
-			apiRequestsCanceledTotalMD,
-
-			apiRequestsTTFBSecondsDistributionMD,
-
-			apiTrafficSentBytesMD,
-			apiTrafficRecvBytesMD,
-		},
-		JoinLoaders(loadAPIRequestsHTTPMetrics, loadAPIRequestsTTFBMetrics,
-			loadAPIRequestsNetworkMetrics),
-	)
-
-	bucketAPIMG := NewBucketMetricsGroup(bucketAPICollectorPath,
-		[]MetricDescriptor{
-			bucketAPITrafficRecvBytesMD,
-			bucketAPITrafficSentBytesMD,
-
-			bucketAPIRequestsInFlightMD,
-			bucketAPIRequestsTotalMD,
-			bucketAPIRequestsCanceledMD,
-			bucketAPIRequests4xxErrorsMD,
-			bucketAPIRequests5xxErrorsMD,
-
-			bucketAPIRequestsTTFBSecondsDistributionMD,
-		},
-		JoinBucketLoaders(loadBucketAPIHTTPMetrics, loadBucketAPITTFBMetrics),
-	)
-
-	bucketReplicationMG := NewBucketMetricsGroup(bucketReplicationCollectorPath,
-		[]MetricDescriptor{
-			bucketReplLastHrFailedBytesMD,
-			bucketReplLastHrFailedCountMD,
-			bucketReplLastMinFailedBytesMD,
-			bucketReplLastMinFailedCountMD,
-			bucketReplLatencyMsMD,
-			bucketReplProxiedDeleteTaggingRequestsTotalMD,
-			bucketReplProxiedGetRequestsFailuresMD,
-			bucketReplProxiedGetRequestsTotalMD,
-			bucketReplProxiedGetTaggingRequestsFailuresMD,
-			bucketReplProxiedGetTaggingRequestsTotalMD,
-			bucketReplProxiedHeadRequestsFailuresMD,
-			bucketReplProxiedHeadRequestsTotalMD,
-			bucketReplProxiedPutTaggingRequestsFailuresMD,
-			bucketReplProxiedPutTaggingRequestsTotalMD,
-			bucketReplSentBytesMD,
-			bucketReplSentCountMD,
-			bucketReplTotalFailedBytesMD,
-			bucketReplTotalFailedCountMD,
-			bucketReplProxiedDeleteTaggingRequestsFailuresMD,
-		},
-		loadBucketReplicationMetrics,
-	)
-
-	systemNetworkInternodeMG := NewMetricsGroup(systemNetworkInternodeCollectorPath,
-		[]MetricDescriptor{
-			internodeErrorsTotalMD,
-			internodeDialedErrorsTotalMD,
-			internodeDialAvgTimeNanosMD,
-			internodeSentBytesTotalMD,
-			internodeRecvBytesTotalMD,
-		},
-		loadNetworkInternodeMetrics,
-	)
-
-	systemMemoryMG := NewMetricsGroup(systemMemoryCollectorPath,
-		[]MetricDescriptor{
-			memTotalMD,
-			memUsedMD,
-			memFreeMD,
-			memAvailableMD,
-			memBuffersMD,
-			memCacheMD,
-			memSharedMD,
-			memUsedPercMD,
-		},
-		loadMemoryMetrics,
-	)
-
-	systemCPUMG := NewMetricsGroup(systemCPUCollectorPath,
-		[]MetricDescriptor{
-			sysCPUAvgIdleMD,
-			sysCPUAvgIOWaitMD,
-			sysCPULoadMD,
-			sysCPULoadPercMD,
-			sysCPUNiceMD,
-			sysCPUStealMD,
-			sysCPUSystemMD,
-			sysCPUUserMD,
-		},
-		loadCPUMetrics,
-	)
-
-	systemProcessMG := NewMetricsGroup(systemProcessCollectorPath,
-		[]MetricDescriptor{
-			processLocksReadTotalMD,
-			processLocksWriteTotalMD,
-			processCPUTotalSecondsMD,
-			processGoRoutineTotalMD,
-			processIORCharBytesMD,
-			processIOReadBytesMD,
-			processIOWCharBytesMD,
-			processIOWriteBytesMD,
-			processStarttimeSecondsMD,
-			processUptimeSecondsMD,
-			processFileDescriptorLimitTotalMD,
-			processFileDescriptorOpenTotalMD,
-			processSyscallReadTotalMD,
-			processSyscallWriteTotalMD,
-			processResidentMemoryBytesMD,
-			processVirtualMemoryBytesMD,
-			processVirtualMemoryMaxBytesMD,
-		},
-		loadProcessMetrics,
-	)
-
-	systemDriveMG := NewMetricsGroup(systemDriveCollectorPath,
-		[]MetricDescriptor{
-			driveUsedBytesMD,
-			driveFreeBytesMD,
-			driveTotalBytesMD,
-			driveUsedInodesMD,
-			driveFreeInodesMD,
-			driveTotalInodesMD,
-			driveTimeoutErrorsMD,
-			driveIOErrorsMD,
-			driveAvailabilityErrorsMD,
-			driveWaitingIOMD,
-			driveAPILatencyMD,
-			driveHealthMD,
-
-			driveOfflineCountMD,
-			driveOnlineCountMD,
-			driveCountMD,
-
-			// iostat related
-			driveReadsPerSecMD,
-			driveReadsKBPerSecMD,
-			driveReadsAwaitMD,
-			driveWritesPerSecMD,
-			driveWritesKBPerSecMD,
-			driveWritesAwaitMD,
-			drivePercUtilMD,
-		},
-		loadDriveMetrics,
-	)
-
-	clusterHealthMG := NewMetricsGroup(clusterHealthCollectorPath,
-		[]MetricDescriptor{
-			healthDrivesOfflineCountMD,
-			healthDrivesOnlineCountMD,
-			healthDrivesCountMD,
-
-			healthNodesOfflineCountMD,
-			healthNodesOnlineCountMD,
-
-			healthCapacityRawTotalBytesMD,
-			healthCapacityRawFreeBytesMD,
-			healthCapacityUsableTotalBytesMD,
-			healthCapacityUsableFreeBytesMD,
-		},
-		JoinLoaders(loadClusterHealthDriveMetrics,
-			loadClusterHealthNodeMetrics,
-			loadClusterHealthCapacityMetrics),
-	)
-
-	clusterUsageObjectsMG := NewMetricsGroup(clusterUsageObjectsCollectorPath,
-		[]MetricDescriptor{
-			usageSinceLastUpdateSecondsMD,
-			usageTotalBytesMD,
-			usageObjectsCountMD,
-			usageVersionsCountMD,
-			usageDeleteMarkersCountMD,
-			usageBucketsCountMD,
-			usageObjectsDistributionMD,
-			usageVersionsDistributionMD,
-		},
-		loadClusterUsageObjectMetrics,
-	)
-
-	clusterUsageBucketsMG := NewMetricsGroup(clusterUsageBucketsCollectorPath,
-		[]MetricDescriptor{
-			usageSinceLastUpdateSecondsMD,
-			usageBucketTotalBytesMD,
-			usageBucketObjectsTotalMD,
-			usageBucketVersionsCountMD,
-			usageBucketDeleteMarkersCountMD,
-			usageBucketQuotaTotalBytesMD,
-			usageBucketObjectSizeDistributionMD,
-			usageBucketObjectVersionCountDistributionMD,
-		},
-		loadClusterUsageBucketMetrics,
-	)
-
-	clusterErasureSetMG := NewMetricsGroup(clusterErasureSetCollectorPath,
-		[]MetricDescriptor{
-			erasureSetOverallWriteQuorumMD,
-			erasureSetOverallHealthMD,
-			erasureSetReadQuorumMD,
-			erasureSetWriteQuorumMD,
-			erasureSetOnlineDrivesCountMD,
-			erasureSetHealingDrivesCountMD,
-			erasureSetHealthMD,
-			erasureSetReadToleranceMD,
-			erasureSetWriteToleranceMD,
-			erasureSetReadHealthMD,
-			erasureSetWriteHealthMD,
-		},
-		loadClusterErasureSetMetrics,
-	)
-
-	clusterNotificationMG := NewMetricsGroup(notificationCollectorPath,
-		[]MetricDescriptor{
-			notificationCurrentSendInProgressMD,
-			notificationEventsErrorsTotalMD,
-			notificationEventsSentTotalMD,
-			notificationEventsSkippedTotalMD,
-		},
-		loadClusterNotificationMetrics,
-	)
-
-	clusterIAMMG := NewMetricsGroup(clusterIAMCollectorPath,
-		[]MetricDescriptor{
-			lastSyncDurationMillisMD,
-			pluginAuthnServiceFailedRequestsMinuteMD,
-			pluginAuthnServiceLastFailSecondsMD,
-			pluginAuthnServiceLastSuccSecondsMD,
-			pluginAuthnServiceSuccAvgRttMsMinuteMD,
-			pluginAuthnServiceSuccMaxRttMsMinuteMD,
-			pluginAuthnServiceTotalRequestsMinuteMD,
-			sinceLastSyncMillisMD,
-			syncFailuresMD,
-			syncSuccessesMD,
-		},
-		loadClusterIAMMetrics,
-	)
-
-	clusterReplicationMG := NewMetricsGroup(replicationCollectorPath,
-		[]MetricDescriptor{
-			replicationAverageActiveWorkersMD,
-			replicationAverageQueuedBytesMD,
-			replicationAverageQueuedCountMD,
-			replicationAverageDataTransferRateMD,
-			replicationCurrentActiveWorkersMD,
-			replicationCurrentDataTransferRateMD,
-			replicationLastMinuteQueuedBytesMD,
-			replicationLastMinuteQueuedCountMD,
-			replicationMaxActiveWorkersMD,
-			replicationMaxQueuedBytesMD,
-			replicationMaxQueuedCountMD,
-			replicationMaxDataTransferRateMD,
-			replicationRecentBacklogCountMD,
-		},
-		loadClusterReplicationMetrics,
-	)
-
-	clusterConfigMG := NewMetricsGroup(clusterConfigCollectorPath,
-		[]MetricDescriptor{
-			configRRSParityMD,
-			configStandardParityMD,
-		},
-		loadClusterConfigMetrics,
-	)
-
-	scannerMG := NewMetricsGroup(scannerCollectorPath,
-		[]MetricDescriptor{
-			scannerBucketScansFinishedMD,
-			scannerBucketScansStartedMD,
-			scannerDirectoriesScannedMD,
-			scannerObjectsScannedMD,
-			scannerVersionsScannedMD,
-			scannerLastActivitySecondsMD,
-		},
-		loadClusterScannerMetrics,
-	)
-
-	loggerWebhookMG := NewMetricsGroup(loggerWebhookCollectorPath,
-		[]MetricDescriptor{
-			webhookFailedMessagesMD,
-			webhookQueueLengthMD,
-			webhookTotalMessagesMD,
-		},
-		loadLoggerWebhookMetrics,
-	)
-
-	auditMG := NewMetricsGroup(auditCollectorPath,
-		[]MetricDescriptor{
-			auditFailedMessagesMD,
-			auditTargetQueueLengthMD,
-			auditTotalMessagesMD,
-		},
-		loadAuditMetrics,
-	)
-
-	ilmMG := NewMetricsGroup(ilmCollectorPath,
-		[]MetricDescriptor{
-			ilmExpiryPendingTasksMD,
-			ilmTransitionActiveTasksMD,
-			ilmTransitionPendingTasksMD,
-			ilmTransitionMissedImmediateTasksMD,
-			ilmVersionsScannedMD,
-		},
-		loadILMMetrics,
-	)
-
-	allMetricGroups := []*MetricsGroup{
-		apiRequestsMG,
-		bucketAPIMG,
-		bucketReplicationMG,
-
-		systemNetworkInternodeMG,
-		systemDriveMG,
-		systemMemoryMG,
-		systemCPUMG,
-		systemProcessMG,
-
-		clusterHealthMG,
-		clusterUsageObjectsMG,
-		clusterUsageBucketsMG,
-		clusterErasureSetMG,
-		clusterNotificationMG,
-		clusterIAMMG,
-		clusterReplicationMG,
-		clusterConfigMG,
-
-		ilmMG,
-		scannerMG,
-		auditMG,
-		loggerWebhookMG,
+// toMetricsHTTPStats converts the cmd HTTP statistics type to the metrics
+// package view.
+func toMetricsHTTPStats(hs ServerHTTPStats) metrics.ServerHTTPStats {
+	return metrics.ServerHTTPStats{
+		S3RequestsInQueue:      hs.S3RequestsInQueue,
+		S3RequestsIncoming:     hs.S3RequestsIncoming,
+		CurrentS3Requests:      hs.CurrentS3Requests.APIStats,
+		TotalS3Requests:        hs.TotalS3Requests.APIStats,
+		TotalS3Errors:          hs.TotalS3Errors.APIStats,
+		TotalS35xxErrors:       hs.TotalS35xxErrors.APIStats,
+		TotalS34xxErrors:       hs.TotalS34xxErrors.APIStats,
+		TotalS3Canceled:        hs.TotalS3Canceled.APIStats,
+		TotalS3RejectedAuth:    hs.TotalS3RejectedAuth,
+		TotalS3RejectedTime:    hs.TotalS3RejectedTime,
+		TotalS3RejectedHeader:  hs.TotalS3RejectedHeader,
+		TotalS3RejectedInvalid: hs.TotalS3RejectedInvalid,
 	}
+}
 
-	// Bucket metrics are special, they always include the bucket label. These
-	// metrics required a list of buckets to be passed to the loader, and the list
-	// of buckets is not known until the request is made. So we keep a separate
-	// map for bucket metrics and handle them specially.
-
-	// Add the serverName and poolIndex labels to all non-cluster metrics.
-	//
-	// Also create metric group maps and set the cache.
-	metricsCache := newMetricsCache()
-	mgMap := make(map[collectorPath]*MetricsGroup)
-	bucketMGMap := make(map[collectorPath]*MetricsGroup)
-	for _, mg := range allMetricGroups {
-		if !strings.HasPrefix(string(mg.CollectorPath), clusterBasePath) {
-			mg.AddExtraLabels(
-				serverName, globalLocalNodeName,
-				// poolIndex, strconv.Itoa(globalLocalPoolIdx),
-			)
-		}
-		mg.SetCache(metricsCache)
-		if mg.IsBucketMetricsGroup() {
-			bucketMGMap[mg.CollectorPath] = mg
-		} else {
-			mgMap[mg.CollectorPath] = mg
+// toMetricsDataUsageInfo converts the cmd data usage census to the metrics
+// package view.
+func toMetricsDataUsageInfo(dui DataUsageInfo) metrics.DataUsageInfo {
+	out := metrics.DataUsageInfo{
+		LastUpdate:   dui.LastUpdate,
+		BucketsUsage: make(map[string]metrics.BucketUsage, len(dui.BucketsUsage)),
+	}
+	for b, u := range dui.BucketsUsage {
+		out.BucketsUsage[b] = metrics.BucketUsage{
+			Size:                    u.Size,
+			ObjectsCount:            u.ObjectsCount,
+			VersionsCount:           u.VersionsCount,
+			DeleteMarkersCount:      u.DeleteMarkersCount,
+			ObjectSizesHistogram:    u.ObjectSizesHistogram,
+			ObjectVersionsHistogram: u.ObjectVersionsHistogram,
 		}
 	}
-
-	// Prepare to register the collectors. Other than `MetricGroup` collectors,
-	// we also have standard collectors like `GoCollector`.
-
-	// Create all Non-`MetricGroup` collectors here.
-	collectors := map[collectorPath]prometheus.Collector{
-		debugGoCollectorPath: collectors.NewGoCollector(),
-	}
-
-	// Add all `MetricGroup` collectors to the map.
-	for _, mg := range allMetricGroups {
-		collectors[mg.CollectorPath] = mg
-	}
-
-	// Helper function to register a collector and return a gatherer for it.
-	mustRegister := func(c ...prometheus.Collector) prometheus.Gatherer {
-		subRegistry := prometheus.NewRegistry()
-		for _, col := range c {
-			subRegistry.MustRegister(col)
-		}
-		r.MustRegister(subRegistry)
-		return subRegistry
-	}
-
-	// Register all collectors and create gatherers for them.
-	gatherers := make(map[collectorPath]prometheus.Gatherer, len(collectors))
-	collectorPaths := make([]collectorPath, 0, len(collectors))
-	for path, collector := range collectors {
-		gatherers[path] = mustRegister(collector)
-		collectorPaths = append(collectorPaths, path)
-	}
-	slices.Sort(collectorPaths)
-	return &metricsV3Collection{
-		mgMap:          mgMap,
-		bucketMGMap:    bucketMGMap,
-		mgGatherers:    gatherers,
-		collectorPaths: collectorPaths,
-	}
+	return out
 }

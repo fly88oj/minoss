@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -46,7 +46,7 @@ var (
 
 // loadLoggerWebhookMetrics - `MetricsLoaderFn` for logger webhook
 // such as failed messages and total messages.
-func loadLoggerWebhookMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
+func (d *Deps) loadLoggerWebhookMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
 	tgts := append(logger.SystemTargets(), logger.AuditTargets()...)
 	for _, t := range tgts {
 		labels := []string{nameL, t.String(), endpointL, t.Endpoint()}

@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import "context"
 
@@ -36,7 +36,7 @@ var (
 
 // loadClusterHealthDriveMetrics - `MetricsLoaderFn` for cluster storage drive metrics
 // such as online, offline and total drives.
-func loadClusterHealthDriveMetrics(ctx context.Context, m MetricValues,
+func (d *Deps) loadClusterHealthDriveMetrics(ctx context.Context, m MetricValues,
 	c *metricsCache,
 ) error {
 	clusterDriveMetrics, _ := c.clusterDriveMetrics.Get()
@@ -62,7 +62,7 @@ var (
 
 // loadClusterHealthNodeMetrics - `MetricsLoaderFn` for cluster health node
 // metrics.
-func loadClusterHealthNodeMetrics(ctx context.Context, m MetricValues,
+func (d *Deps) loadClusterHealthNodeMetrics(ctx context.Context, m MetricValues,
 	c *metricsCache,
 ) error {
 	nodesUpDown, _ := c.nodesUpDown.Get()
@@ -93,7 +93,7 @@ var (
 
 // loadClusterHealthCapacityMetrics - `MetricsLoaderFn` for cluster storage
 // capacity metrics.
-func loadClusterHealthCapacityMetrics(ctx context.Context, m MetricValues,
+func (d *Deps) loadClusterHealthCapacityMetrics(ctx context.Context, m MetricValues,
 	c *metricsCache,
 ) error {
 	clusterDriveMetrics, _ := c.clusterDriveMetrics.Get()

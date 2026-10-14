@@ -971,6 +971,17 @@ func getGoMetrics() *MetricsGroupV2 {
 //
 // The toLowerAPILabels parameter is added for compatibility,
 // if set, it lowercases the `api` label values.
+// Metric name constants shared between v2 groups and the v3 ILM/logger
+// subsystem (internal/metrics).
+const (
+	expiryPendingTasks     MetricName = "expiry_pending_tasks"
+	transitionActiveTasks  MetricName = "transition_active_tasks"
+	transitionPendingTasks MetricName = "transition_pending_tasks"
+	webhookQueueLength     MetricName = "queue_length"
+	webhookTotalMessages   MetricName = "total_messages"
+	webhookFailedMessages  MetricName = "failed_messages"
+)
+
 func getHistogramMetrics(hist *prometheus.HistogramVec, desc MetricDescription, toLowerAPILabels, limitBuckets bool) []MetricV2 {
 	ch := make(chan prometheus.Metric)
 	go func() {

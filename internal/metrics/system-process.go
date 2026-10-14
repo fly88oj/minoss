@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -65,7 +65,7 @@ var (
 	processVirtualMemoryMaxBytesMD    = NewGaugeMD(processVirtualMemoryMaxBytes, "Maximum virtual memory size in bytes")
 )
 
-func loadProcStatMetrics(ctx context.Context, stat procfs.ProcStat, m MetricValues) {
+func (d *Deps) loadProcStatMetrics(ctx context.Context, stat procfs.ProcStat, m MetricValues) {
 	if stat.CPUTime() > 0 {
 		m.Set(processCPUTotalSeconds, float64(stat.CPUTime()))
 	}
@@ -80,13 +80,13 @@ func loadProcStatMetrics(ctx context.Context, stat procfs.ProcStat, m MetricValu
 
 	startTime, err := stat.StartTime()
 	if err != nil {
-		metricsLogIf(ctx, err)
+		d.LogIf(ctx, err)
 	} else if startTime > 0 {
 		m.Set(processStartTimeSeconds, float64(startTime))
 	}
 }
 
-func loadProcIOMetrics(ctx context.Context, io procfs.ProcIO, m MetricValues) {
+func (d *Deps) loadProcIOMetrics(ctx context.Context, io procfs.ProcIO, m MetricValues) {
 	if io.RChar > 0 {
 		m.Set(processIORCharBytes, float64(io.RChar))
 	}
@@ -112,24 +112,24 @@ func loadProcIOMetrics(ctx context.Context, io procfs.ProcIO, m MetricValues) {
 	}
 }
 
-func loadProcFSMetrics(ctx context.Context, p procfs.Proc, m MetricValues) {
+func (d *Deps) loadProcFSMetrics(ctx context.Context, p procfs.Proc, m MetricValues) {
 	stat, err := p.Stat()
 	if err != nil {
-		metricsLogIf(ctx, err)
+		d.LogIf(ctx, err)
 	} else {
-		loadProcStatMetrics(ctx, stat, m)
+		d.loadProcStatMetrics(ctx, stat, m)
 	}
 
 	io, err := p.IO()
 	if err != nil {
-		metricsLogIf(ctx, err)
+		d.LogIf(ctx, err)
 	} else {
-		loadProcIOMetrics(ctx, io, m)
+		d.loadProcIOMetrics(ctx, io, m)
 	}
 
 	l, err := p.Limits()
 	if err != nil {
-		metricsLogIf(ctx, err)
+		d.LogIf(ctx, err)
 	} else {
 		if l.OpenFiles > 0 {
 			m.Set(processFileDescriptorLimitTotal, float64(l.OpenFiles))
@@ -142,33 +142,33 @@ func loadProcFSMetrics(ctx context.Context, p procfs.Proc, m MetricValues) {
 
 	openFDs, err := p.FileDescriptorsLen()
 	if err != nil {
-		metricsLogIf(ctx, err)
+		d.LogIf(ctx, err)
 	} else if openFDs > 0 {
 		m.Set(processFileDescriptorOpenTotal, float64(openFDs))
 	}
 }
 
 // loadProcessMetrics - `MetricsLoaderFn` for process metrics
-func loadProcessMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
+func (d *Deps) loadProcessMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
 	m.Set(processGoRoutineTotal, float64(runtime.NumGoroutine()))
 
-	if !globalBootTime.IsZero() {
-		m.Set(processUptimeSeconds, time.Since(globalBootTime).Seconds())
+	if !d.BootTime.IsZero() {
+		m.Set(processUptimeSeconds, time.Since(d.BootTime).Seconds())
 	}
 
-	if runtime.GOOS != globalWindowsOSName && runtime.GOOS != globalMacOSName {
+	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
 		p, err := procfs.Self()
 		if err != nil {
-			metricsLogIf(ctx, err)
+			d.LogIf(ctx, err)
 		} else {
-			loadProcFSMetrics(ctx, p, m)
+			d.loadProcFSMetrics(ctx, p, m)
 		}
 	}
 
-	if globalIsDistErasure && globalLockServer != nil {
-		st := globalLockServer.stats()
-		m.Set(processLocksReadTotal, float64(st.Reads))
-		m.Set(processLocksWriteTotal, float64(st.Writes))
+	if d.IsDistErasure {
+		reads, writes := d.LockStats()
+		m.Set(processLocksReadTotal, float64(reads))
+		m.Set(processLocksWriteTotal, float64(writes))
 	}
 	return nil
 }

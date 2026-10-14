@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -45,7 +45,7 @@ var (
 )
 
 // loadCPUMetrics - `MetricsLoaderFn` for system CPU metrics.
-func loadCPUMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
+func (d *Deps) loadCPUMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
 	cpuMetrics, _ := c.cpuMetrics.Get()
 
 	if cpuMetrics.LoadStat != nil {
@@ -67,18 +67,10 @@ func loadCPUMetrics(ctx context.Context, m MetricValues, c *metricsCache) error 
 		m.Set(sysCPUSteal, cpuStealVal)
 	}
 
-	// metrics-resource.go runs a job to collect resource metrics including their Avg values and
-	// stores them in resourceMetricsMap. We can use it to get the Avg values of CPU idle and IOWait.
-	cpuResourceMetrics, found := resourceMetricsMap[cpuSubsystem]
-	if found {
-		if cpuIdleMetric, ok := cpuResourceMetrics[getResourceKey(cpuIdle, nil)]; ok {
-			avgVal := math.Round(cpuIdleMetric.Avg*100) / 100
-			m.Set(sysCPUAvgIdle, avgVal)
-		}
-		if cpuIOWaitMetric, ok := cpuResourceMetrics[getResourceKey(cpuIOWait, nil)]; ok {
-			avgVal := math.Round(cpuIOWaitMetric.Avg*100) / 100
-			m.Set(sysCPUAvgIOWait, avgVal)
-		}
+	// The resource metrics job collects rolling Avg values of CPU idle and IOWait.
+	if idle, iowait, ok := d.CPUAvg(); ok {
+		m.Set(sysCPUAvgIdle, math.Round(idle*100)/100)
+		m.Set(sysCPUAvgIOWait, math.Round(iowait*100)/100)
 	}
 	return nil
 }

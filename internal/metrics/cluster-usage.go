@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -55,10 +55,10 @@ var (
 // loadClusterUsageObjectMetrics - reads cluster usage metrics.
 //
 // This is a `MetricsLoaderFn`.
-func loadClusterUsageObjectMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
+func (d *Deps) loadClusterUsageObjectMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
 	dataUsageInfo, err := c.dataUsageInfo.Get()
 	if err != nil {
-		metricsLogIf(ctx, err)
+		d.LogIf(ctx, err)
 		return nil
 	}
 
@@ -139,10 +139,10 @@ var (
 )
 
 // loadClusterUsageBucketMetrics - `MetricsLoaderFn` to load bucket usage metrics.
-func loadClusterUsageBucketMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
+func (d *Deps) loadClusterUsageBucketMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
 	dataUsageInfo, err := c.dataUsageInfo.Get()
 	if err != nil {
-		metricsLogIf(ctx, err)
+		d.LogIf(ctx, err)
 		return nil
 	}
 
@@ -154,11 +154,11 @@ func loadClusterUsageBucketMetrics(ctx context.Context, m MetricValues, c *metri
 	m.Set(usageSinceLastUpdateSeconds, float64(time.Since(dataUsageInfo.LastUpdate)))
 
 	for bucket, usage := range dataUsageInfo.BucketsUsage {
-		quota, err := globalBucketQuotaSys.Get(ctx, bucket)
+		quota, err := d.BucketQuota(ctx, bucket)
 		if err != nil {
 			// Log and continue if we are unable to retrieve metrics for this
 			// bucket.
-			metricsLogIf(ctx, err)
+			d.LogIf(ctx, err)
 			continue
 		}
 

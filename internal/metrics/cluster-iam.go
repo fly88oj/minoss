@@ -15,11 +15,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
-	"sync/atomic"
 	"time"
 )
 
@@ -50,20 +49,20 @@ var (
 )
 
 // loadClusterIAMMetrics - `MetricsLoaderFn` for cluster IAM metrics.
-func loadClusterIAMMetrics(_ context.Context, m MetricValues, _ *metricsCache) error {
-	m.Set(lastSyncDurationMillis, float64(atomic.LoadUint64(&globalIAMSys.LastRefreshDurationMilliseconds)))
-	pluginAuthNMetrics := globalAuthNPlugin.Metrics()
+func (d *Deps) loadClusterIAMMetrics(_ context.Context, m MetricValues, _ *metricsCache) error {
+	lastSyncMillis, lastSyncTimeNanos, syncFailuresN, syncSuccessesN := d.IAMStats()
+	m.Set(lastSyncDurationMillis, float64(lastSyncMillis))
+	pluginAuthNMetrics := d.AuthNPluginMetrics()
 	m.Set(pluginAuthnServiceFailedRequestsMinute, float64(pluginAuthNMetrics.FailedRequests))
 	m.Set(pluginAuthnServiceLastFailSeconds, pluginAuthNMetrics.LastUnreachableSecs)
 	m.Set(pluginAuthnServiceLastSuccSeconds, pluginAuthNMetrics.LastReachableSecs)
 	m.Set(pluginAuthnServiceSuccAvgRttMsMinute, pluginAuthNMetrics.AvgSuccRTTMs)
 	m.Set(pluginAuthnServiceSuccMaxRttMsMinute, pluginAuthNMetrics.MaxSuccRTTMs)
 	m.Set(pluginAuthnServiceTotalRequestsMinute, float64(pluginAuthNMetrics.TotalRequests))
-	lastSyncTime := atomic.LoadUint64(&globalIAMSys.LastRefreshTimeUnixNano)
-	if lastSyncTime != 0 {
-		m.Set(sinceLastSyncMillis, float64((uint64(time.Now().UnixNano())-lastSyncTime)/uint64(time.Millisecond)))
+	if lastSyncTimeNanos != 0 {
+		m.Set(sinceLastSyncMillis, float64((uint64(time.Now().UnixNano())-lastSyncTimeNanos)/uint64(time.Millisecond)))
 	}
-	m.Set(syncFailures, float64(atomic.LoadUint64(&globalIAMSys.TotalRefreshFailures)))
-	m.Set(syncSuccesses, float64(atomic.LoadUint64(&globalIAMSys.TotalRefreshSuccesses)))
+	m.Set(syncFailures, float64(syncFailuresN))
+	m.Set(syncSuccesses, float64(syncSuccessesN))
 	return nil
 }

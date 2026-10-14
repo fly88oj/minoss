@@ -15,11 +15,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -28,7 +29,11 @@ import (
 	"github.com/minio/minio/internal/logger"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
+
+// SlashSeparator is the path separator used by collector paths.
+const SlashSeparator = "/"
 
 type collectorPath string
 
@@ -63,7 +68,10 @@ func (cp collectorPath) isDescendantOf(arg string) bool {
 	return strings.HasPrefix(descendant, arg)
 }
 
-// MetricType - represents the type of a metric.
+// MetricName is the wire name of a metric.
+type MetricName string
+
+// MetricType is the prometheus metric type.
 type MetricType int
 
 const (
@@ -164,7 +172,7 @@ type metricValue struct {
 }
 
 // MetricValues - type to set metric values retrieved while loading metrics. A
-// value of this type is passed to the `MetricsLoaderFn`.
+// value of this type is passed to the `LoaderFn`.
 type MetricValues struct {
 	values      map[MetricName][]metricValue
 	descriptors map[MetricName]MetricDescriptor
@@ -204,7 +212,7 @@ func (m *MetricValues) ToPromMetrics(namePrefix string, extraLabels map[string]s
 // Set - sets a metric value along with any provided labels. It is used only
 // with Gauge and Counter metrics.
 //
-// If the MetricName given here is not present in the `MetricsGroup`'s
+// If the MetricName given here is not present in the `Group`'s
 // descriptors, this function panics.
 //
 // Panics if `labels` is not a list of ordered label name and label value pairs
@@ -266,8 +274,7 @@ func (m *MetricValues) SetHistogram(name MetricName, hist *prometheus.HistogramV
 	if _, ok := m.descriptors[name]; !ok {
 		panic(fmt.Sprintf("metric has no description: %s", name))
 	}
-	dummyDesc := MetricDescription{}
-	metricsV2 := getHistogramMetrics(hist, dummyDesc, false, false)
+	metricsV2 := histogramMetrics(hist, false)
 mainLoop:
 	for _, metric := range metricsV2 {
 		for label, allowedValues := range filterByLabels {
@@ -306,17 +313,17 @@ func SetHistogramValues[V uint64 | int64 | float64](m MetricValues, name MetricN
 	}
 }
 
-// MetricsLoaderFn - represents a function to load metrics from the
+// LoaderFn - represents a function to load metrics from the
 // metricsCache.
 //
 // Note that returning an error here will cause the Metrics handler to return a
 // 500 Internal Server Error.
-type MetricsLoaderFn func(context.Context, MetricValues, *metricsCache) error
+type LoaderFn func(context.Context, MetricValues, *metricsCache) error
 
 // JoinLoaders - joins multiple loaders into a single loader. The returned
 // loader will call each of the given loaders in order. If any of the loaders
 // return an error, the returned loader will return that error.
-func JoinLoaders(loaders ...MetricsLoaderFn) MetricsLoaderFn {
+func JoinLoaders(loaders ...LoaderFn) LoaderFn {
 	return func(ctx context.Context, m MetricValues, c *metricsCache) error {
 		for _, loader := range loaders {
 			if err := loader(ctx, m, c); err != nil {
@@ -327,16 +334,16 @@ func JoinLoaders(loaders ...MetricsLoaderFn) MetricsLoaderFn {
 	}
 }
 
-// BucketMetricsLoaderFn - represents a function to load metrics from the
+// BucketLoaderFn - represents a function to load metrics from the
 // metricsCache and the system for a given list of buckets.
 //
 // Note that returning an error here will cause the Metrics handler to return a
 // 500 Internal Server Error.
-type BucketMetricsLoaderFn func(context.Context, MetricValues, *metricsCache, []string) error
+type BucketLoaderFn func(context.Context, MetricValues, *metricsCache, []string) error
 
 // JoinBucketLoaders - joins multiple bucket loaders into a single loader,
 // similar to `JoinLoaders`.
-func JoinBucketLoaders(loaders ...BucketMetricsLoaderFn) BucketMetricsLoaderFn {
+func JoinBucketLoaders(loaders ...BucketLoaderFn) BucketLoaderFn {
 	return func(ctx context.Context, m MetricValues, c *metricsCache, b []string) error {
 		for _, loader := range loaders {
 			if err := loader(ctx, m, c, b); err != nil {
@@ -347,7 +354,7 @@ func JoinBucketLoaders(loaders ...BucketMetricsLoaderFn) BucketMetricsLoaderFn {
 	}
 }
 
-// MetricsGroup - represents a group of metrics. It includes a `MetricsLoaderFn`
+// Group - represents a group of metrics. It includes a `LoaderFn`
 // function that provides a way to load the metrics from the system. The metrics
 // are cached and refreshed after a given timeout.
 //
@@ -358,7 +365,8 @@ func JoinBucketLoaders(loaders ...BucketMetricsLoaderFn) BucketMetricsLoaderFn {
 // bucket dimension. For metric groups with a bucket dimension, use the
 // `GetBucketCollector` method to get a `BucketCollector` that implements the
 // prometheus.Collector interface.
-type MetricsGroup struct {
+// Group collects a set of metrics for one collector path.
+type Group struct {
 	// Path (relative to the Metrics v3 base endpoint) at which this group of
 	// metrics is served. This value is converted into a metric name prefix
 	// using `.metricPrefix()` and is added to each metric returned.
@@ -371,8 +379,11 @@ type MetricsGroup struct {
 
 	// Loader functions to load metrics. Only one of these will be set. Metrics
 	// returned by these functions must be present in the `Descriptors` list.
-	loader       MetricsLoaderFn
-	bucketLoader BucketMetricsLoaderFn
+	loader       LoaderFn
+	bucketLoader BucketLoaderFn
+
+	// ctx is the server lifetime context supplied at wiring time.
+	ctx context.Context
 
 	// Cache for all metrics groups. Set via `.SetCache` method.
 	cache *metricsCache
@@ -388,14 +399,14 @@ type MetricsGroup struct {
 	buckets     []string
 }
 
-// NewMetricsGroup creates a new MetricsGroup. To create a metrics group for
-// metrics with a `bucket` dimension (label), use `NewBucketMetricsGroup`.
+// NewGroup creates a new Group. To create a metrics group for
+// metrics with a `bucket` dimension (label), use `NewBucketGroup`.
 //
 // The `loader` function loads metrics from the cache and the system.
-func NewMetricsGroup(path collectorPath, descriptors []MetricDescriptor,
-	loader MetricsLoaderFn,
-) *MetricsGroup {
-	mg := &MetricsGroup{
+func NewGroup(path collectorPath, descriptors []MetricDescriptor,
+	loader LoaderFn,
+) *Group {
+	mg := &Group{
 		CollectorPath: path,
 		Descriptors:   descriptors,
 		loader:        loader,
@@ -404,15 +415,15 @@ func NewMetricsGroup(path collectorPath, descriptors []MetricDescriptor,
 	return mg
 }
 
-// NewBucketMetricsGroup creates a new MetricsGroup for metrics with a `bucket`
+// NewBucketGroup creates a new Group for metrics with a `bucket`
 // dimension (label).
 //
 // The `loader` function loads metrics from the cache and the system for a given
 // list of buckets.
-func NewBucketMetricsGroup(path collectorPath, descriptors []MetricDescriptor,
-	loader BucketMetricsLoaderFn,
-) *MetricsGroup {
-	mg := &MetricsGroup{
+func NewBucketGroup(path collectorPath, descriptors []MetricDescriptor,
+	loader BucketLoaderFn,
+) *Group {
+	mg := &Group{
 		CollectorPath: path,
 		Descriptors:   descriptors,
 		bucketLoader:  loader,
@@ -424,7 +435,7 @@ func NewBucketMetricsGroup(path collectorPath, descriptors []MetricDescriptor,
 // AddExtraLabels - adds extra (constant) label KV pairs to the metrics group.
 // This is a helper to initialize the `ExtraLabels` field. The argument is a
 // list of ordered label name and value pairs.
-func (mg *MetricsGroup) AddExtraLabels(labels ...string) {
+func (mg *Group) AddExtraLabels(labels ...string) {
 	if len(labels)%2 != 0 {
 		panic("Labels must be an ordered list of name value pairs")
 	}
@@ -436,34 +447,36 @@ func (mg *MetricsGroup) AddExtraLabels(labels ...string) {
 	}
 }
 
-// IsBucketMetricsGroup - returns true if the given MetricsGroup is a bucket
+// IsBucketGroup - returns true if the given Group is a bucket
 // metrics group.
-func (mg *MetricsGroup) IsBucketMetricsGroup() bool {
+func (mg *Group) IsBucketGroup() bool {
 	return mg.bucketLoader != nil
 }
 
 // Describe - implements prometheus.Collector interface.
-func (mg *MetricsGroup) Describe(ch chan<- *prometheus.Desc) {
+func (mg *Group) Describe(ch chan<- *prometheus.Desc) {
 	for _, desc := range mg.Descriptors {
 		ch <- desc.toPromDesc(mg.CollectorPath.metricPrefix(), mg.ExtraLabels)
 	}
 }
 
 // Collect - implements prometheus.Collector interface.
-func (mg *MetricsGroup) Collect(ch chan<- prometheus.Metric) {
+func (mg *Group) Collect(ch chan<- prometheus.Metric) {
 	metricValues := newMetricValues(mg.descriptorMap)
 
 	var err error
-	if mg.IsBucketMetricsGroup() {
-		err = mg.bucketLoader(GlobalContext, metricValues, mg.cache, mg.buckets)
+	if mg.IsBucketGroup() {
+		err = mg.bucketLoader(mg.ctx, metricValues, mg.cache, mg.buckets)
 	} else {
-		err = mg.loader(GlobalContext, metricValues, mg.cache)
+		err = mg.loader(mg.ctx, metricValues, mg.cache)
 	}
 
 	// There is no way to handle errors here, so we panic the current goroutine
 	// and the Metrics API handler returns a 500 HTTP status code. This should
 	// normally not happen, and usually indicates a bug.
-	logger.CriticalIf(GlobalContext, fmt.Errorf("failed to get metrics"+": %w", err))
+	if err != nil {
+		logger.CriticalIf(mg.ctx, fmt.Errorf("failed to get metrics"+": %w", err))
+	}
 
 	promMetrics := metricValues.ToPromMetrics(mg.CollectorPath.metricPrefix(),
 		mg.ExtraLabels)
@@ -474,7 +487,7 @@ func (mg *MetricsGroup) Collect(ch chan<- prometheus.Metric) {
 
 // LockAndSetBuckets - locks the buckets and sets the given buckets. It returns
 // a function to unlock the buckets.
-func (mg *MetricsGroup) LockAndSetBuckets(buckets []string) func() {
+func (mg *Group) LockAndSetBuckets(buckets []string) func() {
 	mg.bucketsLock.Lock()
 	mg.buckets = buckets
 	return func() {
@@ -483,7 +496,7 @@ func (mg *MetricsGroup) LockAndSetBuckets(buckets []string) func() {
 }
 
 // MetricFQN - returns the fully qualified name for the given metric name.
-func (mg *MetricsGroup) MetricFQN(name MetricName) string {
+func (mg *Group) MetricFQN(name MetricName) string {
 	v, ok := mg.descriptorMap[name]
 	if !ok {
 		// This should never happen.
@@ -492,7 +505,7 @@ func (mg *MetricsGroup) MetricFQN(name MetricName) string {
 	return v.toPromName(mg.CollectorPath.metricPrefix())
 }
 
-func (mg *MetricsGroup) validate() {
+func (mg *Group) validate() {
 	if len(mg.Descriptors) == 0 {
 		panic("Descriptors must be set")
 	}
@@ -509,7 +522,60 @@ func (mg *MetricsGroup) validate() {
 	}
 }
 
-// SetCache is a helper to initialize MetricsGroup. It sets the cache object.
-func (mg *MetricsGroup) SetCache(c *metricsCache) {
+// SetCache is a helper to initialize Group. It sets the cache object.
+func (mg *Group) SetCache(c *metricsCache) {
 	mg.cache = c
+}
+
+// histogramMetric is one observed histogram bucket as a labeled value.
+type histogramMetric struct {
+	VariableLabels map[string]string
+	Value          float64
+}
+
+// histogramMetrics converts the buckets of a prometheus histogram vector
+// into labeled values ("le" carries the bucket upper bound).
+func histogramMetrics(hist *prometheus.HistogramVec, toLowerAPILabels bool) []histogramMetric {
+	ch := make(chan prometheus.Metric)
+	go func() {
+		defer close(ch)
+		hist.Collect(ch)
+	}()
+
+	var metrics []histogramMetric
+	for promMetric := range ch {
+		dtoMetric := &dto.Metric{}
+		if err := promMetric.Write(dtoMetric); err != nil {
+			continue
+		}
+
+		labels := func() map[string]string {
+			l := make(map[string]string)
+			for _, lp := range dtoMetric.GetLabel() {
+				if *lp.Name == "api" && toLowerAPILabels {
+					l[*lp.Name] = strings.ToLower(*lp.Value)
+				} else {
+					l[*lp.Name] = *lp.Value
+				}
+			}
+			return l
+		}
+
+		h := dtoMetric.GetHistogram()
+		for _, b := range h.Bucket {
+			l := labels()
+			l["le"] = fmt.Sprintf("%.3f", *b.UpperBound)
+			metrics = append(metrics, histogramMetric{
+				VariableLabels: l,
+				Value:          float64(b.GetCumulativeCount()),
+			})
+		}
+		l := labels()
+		l["le"] = fmt.Sprintf("%.3f", math.Inf(+1))
+		metrics = append(metrics, histogramMetric{
+			VariableLabels: l,
+			Value:          float64(dtoMetric.Histogram.GetSampleCount()),
+		})
+	}
+	return metrics
 }

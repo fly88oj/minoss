@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -38,16 +38,13 @@ var (
 )
 
 // loadILMMetrics - `MetricsLoaderFn` for ILM metrics.
-func loadILMMetrics(_ context.Context, m MetricValues, _ *metricsCache) error {
-	if globalExpiryState != nil {
-		m.Set(expiryPendingTasks, float64(globalExpiryState.PendingTasks()))
-	}
-	if globalTransitionState != nil {
-		m.Set(transitionActiveTasks, float64(globalTransitionState.ActiveTasks()))
-		m.Set(transitionPendingTasks, float64(globalTransitionState.PendingTasks()))
-		m.Set(transitionMissedImmediateTasks, float64(globalTransitionState.MissedImmediateTasks()))
-	}
-	m.Set(versionsScanned, float64(globalScannerMetrics.lifetime(scannerMetricILM)))
+func (d *Deps) loadILMMetrics(_ context.Context, m MetricValues, _ *metricsCache) error {
+	m.Set(expiryPendingTasks, float64(d.ExpiryPendingTasks()))
+	active, pending, missed := d.TransitionTasks()
+	m.Set(transitionActiveTasks, float64(active))
+	m.Set(transitionPendingTasks, float64(pending))
+	m.Set(transitionMissedImmediateTasks, float64(missed))
+	m.Set(versionsScanned, float64(d.ScannerLifetime(ScannerILM)))
 
 	return nil
 }

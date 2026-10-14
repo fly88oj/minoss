@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -130,12 +130,10 @@ var (
 		allDriveLabels...)
 )
 
-func getCurrentDriveIOStats() map[string]madmin.DiskIOStats {
+func (d *Deps) getCurrentDriveIOStats() map[string]madmin.DiskIOStats {
 	types := madmin.MetricsDisk
-	driveRealtimeMetrics := collectLocalMetrics(types, collectMetricsOpts{
-		hosts: map[string]struct{}{
-			globalLocalNodeName: {},
-		},
+	driveRealtimeMetrics := d.CollectLocalMetrics(types, map[string]struct{}{
+		d.LocalNodeName: {},
 	})
 
 	stats := map[string]madmin.DiskIOStats{}
@@ -204,10 +202,10 @@ func (m *MetricValues) setDriveIOStatMetrics(ioStats driveIOStatMetrics, labels 
 }
 
 // loadDriveMetrics - `MetricsLoaderFn` for node drive metrics.
-func loadDriveMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
+func (d *Deps) loadDriveMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
 	driveMetrics, err := c.driveMetrics.Get()
 	if err != nil {
-		metricsLogIf(ctx, err)
+		d.LogIf(ctx, err)
 		return nil
 	}
 

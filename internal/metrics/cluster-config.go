@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import "context"
 
@@ -33,10 +33,10 @@ var (
 
 // loadClusterConfigMetrics - `MetricsLoaderFn` for cluster config
 // such as standard and RRS parity.
-func loadClusterConfigMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
+func (d *Deps) loadClusterConfigMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
 	clusterDriveMetrics, err := c.clusterDriveMetrics.Get()
 	if err != nil {
-		metricsLogIf(ctx, err)
+		d.LogIf(ctx, err)
 	} else {
 		m.Set(configStandardParity, float64(clusterDriveMetrics.storageInfo.Backend.StandardSCParity))
 		m.Set(configRRSParity, float64(clusterDriveMetrics.storageInfo.Backend.RRSCParity))

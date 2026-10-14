@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/minio/minio/internal/metrics"
 	"github.com/minio/mux"
 	"github.com/minio/pkg/v3/env"
 )
@@ -55,9 +56,14 @@ func registerMetricsRouter(router *mux.Router) {
 	}
 
 	// Metrics v3
-	metricsV3Server := newMetricsV3Server(auth)
+	metricsV3Server := metrics.NewV3Server(auth, newMetricsDeps())
+	metricsV3CollectorPaths = metricsV3Server.CollectorPaths()
 
 	// Register metrics v3 handler. It also accepts an optional query
 	// parameter `?list` - see handler for details.
 	metricsRouter.Methods(http.MethodGet).Path(metricsV3Path + "{pathComps:.*}").Handler(metricsV3Server)
 }
+
+// metricsV3CollectorPaths records the v3 collector paths for the
+// TestMetricsV3Handler suite.
+var metricsV3CollectorPaths []string

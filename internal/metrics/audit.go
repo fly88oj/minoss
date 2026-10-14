@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -44,7 +44,7 @@ var (
 
 // loadAuditMetrics - `MetricsLoaderFn` for audit
 // such as failed messages and total messages.
-func loadAuditMetrics(_ context.Context, m MetricValues, c *metricsCache) error {
+func (d *Deps) loadAuditMetrics(_ context.Context, m MetricValues, c *metricsCache) error {
 	audit := logger.CurrentStats()
 	for id, st := range audit {
 		labels := []string{targetID, id}

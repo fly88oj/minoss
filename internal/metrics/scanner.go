@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -48,16 +48,16 @@ var (
 
 // loadClusterScannerMetrics - `MetricsLoaderFn` for cluster webhook
 // such as failed objects and directories scanned.
-func loadClusterScannerMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
-	m.Set(scannerBucketScansFinished, float64(globalScannerMetrics.lifetime(scannerMetricScanBucketDrive)))
-	m.Set(scannerBucketScansStarted, float64(globalScannerMetrics.lifetime(scannerMetricScanBucketDrive)+uint64(globalScannerMetrics.activeDrives())))
-	m.Set(scannerDirectoriesScanned, float64(globalScannerMetrics.lifetime(scannerMetricScanFolder)))
-	m.Set(scannerObjectsScanned, float64(globalScannerMetrics.lifetime(scannerMetricScanObject)))
-	m.Set(scannerVersionsScanned, float64(globalScannerMetrics.lifetime(scannerMetricApplyVersion)))
+func (d *Deps) loadClusterScannerMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
+	m.Set(scannerBucketScansFinished, float64(d.ScannerLifetime(ScannerScanBucketDrive)))
+	m.Set(scannerBucketScansStarted, float64(d.ScannerLifetime(ScannerScanBucketDrive)+uint64(d.ScannerActiveDrives())))
+	m.Set(scannerDirectoriesScanned, float64(d.ScannerLifetime(ScannerScanFolder)))
+	m.Set(scannerObjectsScanned, float64(d.ScannerLifetime(ScannerScanObject)))
+	m.Set(scannerVersionsScanned, float64(d.ScannerLifetime(ScannerApplyVersion)))
 
 	dui, err := c.dataUsageInfo.Get()
 	if err != nil {
-		metricsLogIf(ctx, err)
+		d.LogIf(ctx, err)
 	} else {
 		m.Set(scannerLastActivitySeconds, time.Since(dui.LastUpdate).Seconds())
 	}

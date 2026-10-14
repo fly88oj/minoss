@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -68,34 +68,29 @@ var (
 
 // loadClusterReplicationMetrics - `MetricsLoaderFn` for cluster replication metrics
 // such as transfer rate and objects queued.
-func loadClusterReplicationMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
-	st := globalReplicationStats.Load()
-	if st == nil {
+func (d *Deps) loadClusterReplicationMetrics(ctx context.Context, m MetricValues, c *metricsCache) error {
+	qs := d.ClusterReplicationQueue()
+	if qs == nil {
 		return nil
 	}
 
-	qs := st.getNodeQueueStatsSummary()
+	m.Set(replicationAverageQueuedBytes, float64(qs.AvgBytes))
+	m.Set(replicationAverageQueuedCount, float64(qs.AvgCount))
+	m.Set(replicationMaxQueuedBytes, float64(qs.MaxBytes))
+	m.Set(replicationMaxQueuedCount, float64(qs.MaxCount))
+	m.Set(replicationLastMinuteQueuedBytes, float64(qs.CurrBytes))
+	m.Set(replicationLastMinuteQueuedCount, float64(qs.CurrCount))
 
-	qt := qs.QStats
-	m.Set(replicationAverageQueuedBytes, float64(qt.Avg.Bytes))
-	m.Set(replicationAverageQueuedCount, float64(qt.Avg.Count))
-	m.Set(replicationMaxQueuedBytes, float64(qt.Max.Bytes))
-	m.Set(replicationMaxQueuedCount, float64(qt.Max.Count))
-	m.Set(replicationLastMinuteQueuedBytes, float64(qt.Curr.Bytes))
-	m.Set(replicationLastMinuteQueuedCount, float64(qt.Curr.Count))
+	m.Set(replicationAverageActiveWorkers, qs.AvgActiveWorkers)
+	m.Set(replicationCurrentActiveWorkers, float64(qs.CurrActiveWorkers))
+	m.Set(replicationMaxActiveWorkers, float64(qs.MaxActiveWorkers))
 
-	qa := qs.ActiveWorkers
-	m.Set(replicationAverageActiveWorkers, float64(qa.Avg))
-	m.Set(replicationCurrentActiveWorkers, float64(qa.Curr))
-	m.Set(replicationMaxActiveWorkers, float64(qa.Max))
-
-	if len(qs.XferStats) > 0 {
-		tots := qs.XferStats[Total]
-		m.Set(replicationAverageDataTransferRate, tots.Avg)
-		m.Set(replicationCurrentDataTransferRate, tots.Curr)
-		m.Set(replicationMaxDataTransferRate, tots.Peak)
+	if qs.HasTransfer {
+		m.Set(replicationAverageDataTransferRate, qs.AvgTransfer)
+		m.Set(replicationCurrentDataTransferRate, qs.CurrTransfer)
+		m.Set(replicationMaxDataTransferRate, qs.PeakTransfer)
 	}
-	m.Set(replicationRecentBacklogCount, float64(qs.MRFStats.LastFailedCount))
 
+	m.Set(replicationRecentBacklogCount, float64(qs.RecentBacklog))
 	return nil
 }

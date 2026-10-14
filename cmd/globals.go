@@ -175,6 +175,7 @@ var (
 
 	// Indicates if the running minio server is distributed setup.
 	globalIsDistErasure = false
+	globalLocalPoolIdx  = 0
 
 	// Indicates if the running minio server is an erasure-code backend.
 	globalIsErasure = false

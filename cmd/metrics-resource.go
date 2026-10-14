@@ -157,6 +157,30 @@ func init() {
 	}
 }
 
+// Resource metric name constants shared with the v2 resource collection.
+const (
+	memUsed      MetricName = "used"
+	memUsedPerc  MetricName = "used_perc"
+	memFree      MetricName = "free"
+	memShared    MetricName = "shared"
+	memBuffers   MetricName = "buffers"
+	memCache     MetricName = "cache"
+	memAvailable MetricName = "available"
+)
+
+// getDiffStats computes per-interval IO statistics.
+func getDiffStats(initialStats, currentStats madmin.DiskIOStats) madmin.DiskIOStats {
+	return madmin.DiskIOStats{
+		ReadIOs:      currentStats.ReadIOs - initialStats.ReadIOs,
+		WriteIOs:     currentStats.WriteIOs - initialStats.WriteIOs,
+		ReadSectors:  currentStats.ReadSectors - initialStats.ReadSectors,
+		WriteSectors: currentStats.WriteSectors - initialStats.WriteSectors,
+		ReadTicks:    currentStats.ReadTicks - initialStats.ReadTicks,
+		WriteTicks:   currentStats.WriteTicks - initialStats.WriteTicks,
+		TotalTicks:   currentStats.TotalTicks - initialStats.TotalTicks,
+	}
+}
+
 func getResourceKey(name MetricName, labels map[string]string) string {
 	// labels are used to uniquely identify a metric
 	// e.g. reads_per_sec_{drive} inside the map

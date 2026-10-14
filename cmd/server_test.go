@@ -209,8 +209,8 @@ func (s *TestSuiteCommon) TestMetricsV3Handler(c *check) {
 	token, err := jwt.SignedString([]byte(s.secretKey))
 	c.Assert(err, nil)
 
-	for _, cpath := range globalMetricsV3CollectorPaths {
-		request, err := newTestSignedRequest(http.MethodGet, s.endPoint+minioReservedBucketPath+metricsV3Path+string(cpath),
+	for _, cpath := range metricsV3CollectorPaths {
+		request, err := newTestSignedRequest(http.MethodGet, s.endPoint+minioReservedBucketPath+metricsV3Path+cpath,
 			0, nil, s.accessKey, s.secretKey, s.signer)
 		c.Assert(err, nil)
 

@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"encoding/json"
@@ -23,9 +23,9 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/minio/minio/internal/config"
+	"github.com/minio/minio/internal/logger"
 	"github.com/minio/minio/internal/mcontext"
 	"github.com/minio/mux"
 	"github.com/minio/pkg/v3/env"
@@ -33,43 +33,46 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// envPrometheusOpenMetrics enables the OpenMetrics exposition format.
+const envPrometheusOpenMetrics = "MINIO_PROMETHEUS_OPEN_METRICS"
+
 type promLogger struct{}
 
 func (p promLogger) Println(v ...any) {
-	metricsLogIf(GlobalContext, fmt.Errorf("metrics handler error: %v", v))
+	logger.Info("metrics handler error: " + fmt.Sprint(v...))
 }
 
-type metricsV3Server struct {
+// Server serves the metrics v3 HTTP API.
+type Server struct {
 	registry *prometheus.Registry
 	opts     promhttp.HandlerOpts
 	auth     func(http.Handler) http.Handler
 
 	metricsData *metricsV3Collection
+	cache       *metricsCache
+
+	collectorPathsList []collectorPath
 }
 
-var (
-	globalMetricsV3CollectorPaths []collectorPath
-	globalMetricsV3Once           sync.Once
-)
-
-func newMetricsV3Server(auth func(h http.Handler) http.Handler) *metricsV3Server {
+// NewV3Server constructs the metrics v3 HTTP server. The deps wiring is
+// supplied by the caller (cmd) - this package keeps no globals.
+func NewV3Server(auth func(h http.Handler) http.Handler, d *Deps) *Server {
 	registry := prometheus.NewRegistry()
-	metricGroups := newMetricGroups(registry)
-	globalMetricsV3Once.Do(func() {
-		globalMetricsV3CollectorPaths = metricGroups.collectorPaths
-	})
-	return &metricsV3Server{
+	metricGroups := newMetricGroups(registry, d)
+	return &Server{
 		registry: registry,
 		opts: promhttp.HandlerOpts{
 			ErrorLog:            promLogger{},
 			ErrorHandling:       promhttp.ContinueOnError,
 			Registry:            registry,
 			MaxRequestsInFlight: 2,
-			EnableOpenMetrics:   env.Get(EnvPrometheusOpenMetrics, config.EnableOff) == config.EnableOn,
-			ProcessStartTime:    globalBootTime,
+			EnableOpenMetrics:   env.Get(envPrometheusOpenMetrics, config.EnableOff) == config.EnableOn,
+			ProcessStartTime:    d.BootTime,
 		},
-		auth:        auth,
-		metricsData: metricGroups,
+		auth:               auth,
+		metricsData:        metricGroups,
+		collectorPathsList: metricGroups.collectorPaths,
+		cache:              newMetricsCache(d),
 	}
 }
 
@@ -99,9 +102,9 @@ func (md metricDisplay) TableRow() string {
 // returned for the requested path.
 //
 // FIXME: It currently only lists `minio_` prefixed metrics.
-func (h *metricsV3Server) listMetrics(path string) http.Handler {
-	// First collect all matching MetricsGroup's
-	matchingMG := make(map[collectorPath]*MetricsGroup)
+func (h *Server) listMetrics(path string) http.Handler {
+	// First collect all matching Group's
+	matchingMG := make(map[collectorPath]*Group)
 	for _, collPath := range h.metricsData.collectorPaths {
 		if collPath.isDescendantOf(path) {
 			if v, ok := h.metricsData.mgMap[collPath]; ok {
@@ -159,7 +162,7 @@ func (h *metricsV3Server) listMetrics(path string) http.Handler {
 	})
 }
 
-func (h *metricsV3Server) handle(path string, isListingRequest bool, buckets []string) http.Handler {
+func (h *Server) handle(path string, isListingRequest bool, buckets []string) http.Handler {
 	var notFoundHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Metrics Resource Not found", http.StatusNotFound)
 	})
@@ -218,7 +221,7 @@ func (h *metricsV3Server) handle(path string, isListingRequest bool, buckets []s
 // could be a comma separated value) to return metrics with a bucket label.
 // Bucket metrics will be returned only for the provided buckets. If no buckets
 // parameter is provided, no bucket metrics are returned.
-func (h *metricsV3Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	pathComponents := mux.Vars(r)["pathComps"]
 	isListingRequest := r.Form.Has("list")
 
@@ -248,4 +251,13 @@ func (h *metricsV3Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Add authentication
 	h.auth(tracedHandler).ServeHTTP(w, r)
+}
+
+// CollectorPaths returns the collector paths served by this server.
+func (h *Server) CollectorPaths() []string {
+	out := make([]string, 0, len(h.collectorPathsList))
+	for _, cp := range h.collectorPathsList {
+		out = append(out, string(cp))
+	}
+	return out
 }

@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package cmd
+package metrics
 
 import (
 	"context"
@@ -36,12 +36,12 @@ var (
 )
 
 // loadClusterNotificationMetrics - `MetricsLoaderFn` for cluster notification metrics.
-func loadClusterNotificationMetrics(_ context.Context, m MetricValues, _ *metricsCache) error {
-	if globalEventNotifier == nil {
+func (d *Deps) loadClusterNotificationMetrics(_ context.Context, m MetricValues, _ *metricsCache) error {
+	if d.EventTargetStats == nil {
 		return nil
 	}
 
-	nstats := globalEventNotifier.targetList.Stats()
+	nstats := d.EventTargetStats()
 	m.Set(notificationCurrentSendInProgress, float64(nstats.CurrentSendCalls))
 	m.Set(notificationEventsErrorsTotal, float64(nstats.EventsErrorsTotal))
 	m.Set(notificationEventsSentTotal, float64(nstats.TotalEvents))
