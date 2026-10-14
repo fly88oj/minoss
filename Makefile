@@ -5,9 +5,20 @@ LDFLAGS := $(shell go run buildscripts/gen-ldflags.go)
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
-VERSION ?= $(shell git describe --tags)
-REPO ?= ghcr.io/fly88oj
-TAG ?= $(REPO)/minio:$(VERSION)
+# This fork publishes no upstream tags, so a fresh clone has nothing for
+# `git describe` and VERSION - used for the container image tag - came out empty
+# (an image named "ghcr.io/fly88oj/minoss:"). The fallback stamps the commit's
+# own date in the fork's RELEASE.<timestamp>Z shape, forced to UTC: git's
+# `--date=format:` renders in the commit's original zone, and a literal `Z`
+# suffix on a +08:00 time would disagree with cmd.ReleaseTag (which uses
+# time.Time.UTC) by hours. If git is unusable the version degrades to
+# RELEASE.unknown instead of an empty tag.
+VERSION ?= $(shell git describe --tags 2>/dev/null || { STAMP=$$(LC_ALL=C TZ=UTC git log -1 --date=format-local:%Y-%m-%dT%H-%M-%SZ --format=%cd 2>/dev/null); if test -n "$$STAMP"; then printf 'RELEASE.%s' "$$STAMP"; else printf 'RELEASE.unknown'; fi; })
+# Must stay in step with release.yml, which publishes ghcr.io/$GITHUB_REPOSITORY
+# (this repository is fly88oj/minoss). It previously disagreed with the chart's
+# own name, so `make docker` built an image the release pipeline never pushes.
+REPO ?= ghcr.io/fly88oj/minoss
+TAG ?= $(REPO):$(VERSION)
 
 # Pinned so the lint gate is reproducible: without it, getdeps fetches the
 # newest release and a linter release can turn a green branch red with no code
