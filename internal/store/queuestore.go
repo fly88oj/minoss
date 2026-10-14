@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/klauspost/compress/s2"
 	"github.com/valyala/bytebufferpool"
 )
@@ -128,7 +127,7 @@ func (store *QueueStore[I]) multiWrite(key Key, items []I) (err error) {
 	buf := bytebufferpool.Get()
 	defer bytebufferpool.Put(buf)
 
-	enc := jsoniter.ConfigCompatibleWithStandardLibrary.NewEncoder(buf)
+	enc := json.NewEncoder(buf)
 
 	for i := range items {
 		if err = enc.Encode(items[i]); err != nil {
@@ -265,7 +264,7 @@ func (store *QueueStore[I]) GetMultiple(key Key) (items []I, err error) {
 		return nil, err
 	}
 
-	decoder := jsoniter.ConfigCompatibleWithStandardLibrary.NewDecoder(bytes.NewReader(raw))
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	for decoder.More() {
 		var item I
 		if err := decoder.Decode(&item); err != nil {

@@ -22,11 +22,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/minio/minio/internal/kms"
 	"github.com/secure-io/sio-go"
 	"github.com/secure-io/sio-go/sioutil"
@@ -88,7 +88,6 @@ func Encrypt(k *kms.KMS, plaintext io.Reader, ctx kms.Context) (io.Reader, error
 		header [5]byte
 		buffer bytes.Buffer
 	)
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	metadata, err := json.Marshal(encryptedObject{
 		KeyID:     key.KeyID,
 		KMSKey:    key.Ciphertext,
@@ -140,7 +139,6 @@ func Decrypt(k *kms.KMS, ciphertext io.Reader, associatedData kms.Context) (io.R
 	if _, err := io.ReadFull(ciphertext, metadataBuffer); err != nil {
 		return nil, err
 	}
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	if err := json.Unmarshal(metadataBuffer, &metadata); err != nil {
 		return nil, err
 	}

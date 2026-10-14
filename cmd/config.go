@@ -26,7 +26,6 @@ import (
 	"sort"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio/internal/config"
 	"github.com/minio/minio/internal/kms"
@@ -169,7 +168,6 @@ func readServerConfig(ctx context.Context, objAPI ObjectLayer, data []byte) (con
 		}
 	}
 
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	if err := json.Unmarshal(data, &srvCfg); err != nil {
 		return nil, err
 	}

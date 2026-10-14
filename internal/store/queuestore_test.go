@@ -19,13 +19,13 @@ package store
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/valyala/bytebufferpool"
 )
 
@@ -247,7 +247,7 @@ func TestMultiplePutGetRaw(t *testing.T) {
 	buf := bytebufferpool.Get()
 	defer bytebufferpool.Put(buf)
 
-	enc := jsoniter.ConfigCompatibleWithStandardLibrary.NewEncoder(buf)
+	enc := json.NewEncoder(buf)
 	for i := range items {
 		if err = enc.Encode(items[i]); err != nil {
 			t.Fatal(err)

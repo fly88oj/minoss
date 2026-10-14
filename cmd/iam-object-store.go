@@ -20,6 +20,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -29,7 +30,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio/internal/config"
 	xioutil "github.com/minio/minio/internal/ioutil"
@@ -82,7 +82,6 @@ func (iamOS *IAMObjectStore) getUsersSysType() UsersSysType {
 }
 
 func (iamOS *IAMObjectStore) saveIAMConfig(ctx context.Context, item any, objPath string, opts ...options) error {
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	data, err := json.Marshal(item)
 	if err != nil {
 		return err
@@ -141,7 +140,6 @@ func (iamOS *IAMObjectStore) loadIAMConfig(ctx context.Context, item any, objPat
 	if err != nil {
 		return err
 	}
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	return json.Unmarshal(data, item)
 }
 

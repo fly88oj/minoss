@@ -20,12 +20,12 @@ package crypto
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"path"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
 	xhttp "github.com/minio/minio/internal/http"
 	"github.com/minio/minio/internal/kms"
 	"github.com/minio/minio/internal/logger"
@@ -80,7 +80,6 @@ func (ssekms) ParseHTTP(h http.Header) (string, kms.Context, error) {
 			return "", nil, err
 		}
 
-		json := jsoniter.ConfigCompatibleWithStandardLibrary
 		if err := json.Unmarshal(b, &ctx); err != nil {
 			return "", nil, err
 		}
@@ -228,7 +227,6 @@ func (ssekms) ParseMetadata(metadata map[string]string) (keyID string, kmsKey []
 		if err != nil {
 			return keyID, kmsKey, sealedKey, ctx, Errorf("The internal KMS context is not base64-encoded")
 		}
-		json := jsoniter.ConfigCompatibleWithStandardLibrary
 		if err = json.Unmarshal(b, &ctx); err != nil {
 			return keyID, kmsKey, sealedKey, ctx, Errorf("The internal sealed KMS context is invalid %w", err)
 		}

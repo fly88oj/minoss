@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"strconv"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/minio/madmin-go/v3"
 )
 
@@ -158,7 +157,6 @@ func (d *DEK) UnmarshalText(text []byte) error {
 		Ciphertext []byte `json:"ciphertext"`
 	}
 	var v JSON
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	if err := json.Unmarshal(text, &v); err != nil {
 		return err
 	}

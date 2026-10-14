@@ -22,6 +22,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -39,7 +40,6 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/google/uuid"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/klauspost/filepathx"
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio/internal/bucket/lifecycle"
@@ -292,7 +292,6 @@ func newXLStorage(ep Endpoint, cleanUp bool) (s *xlStorage, err error) {
 
 	if len(s.formatData) > 0 {
 		format := &formatErasureV3{}
-		json := jsoniter.ConfigCompatibleWithStandardLibrary
 		if err = json.Unmarshal(s.formatData, &format); err != nil {
 			return s, errCorruptedFormat
 		}
@@ -867,7 +866,6 @@ func (s *xlStorage) GetDiskID() (string, error) {
 	}
 
 	format := &formatErasureV3{}
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	if err = json.Unmarshal(b, &format); err != nil {
 		bugLogIf(GlobalContext, err) // log unexpected errors
 		return "", errCorruptedFormat
@@ -2674,7 +2672,6 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 		} else {
 			// This code-path is to preserve the legacy data.
 			xlMetaLegacy := &xlMetaV1Object{}
-			json := jsoniter.ConfigCompatibleWithStandardLibrary
 			if err := json.Unmarshal(dstBuf, xlMetaLegacy); err != nil {
 				storageLogOnceIf(ctx, err, "read-data-unmarshal-"+dstFilePath)
 				// Data appears corrupt. Drop data.

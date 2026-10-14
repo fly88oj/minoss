@@ -26,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/minio/minio-go/v7/pkg/set"
 	"github.com/minio/minio/internal/config"
 	"github.com/minio/minio/internal/kms"
@@ -119,7 +118,6 @@ func getIAMConfig(item any, data []byte, itemPath string) error {
 	if err != nil {
 		return err
 	}
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	return json.Unmarshal(data, item)
 }
 

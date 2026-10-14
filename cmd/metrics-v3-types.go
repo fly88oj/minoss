@@ -26,7 +26,7 @@ import (
 
 	"github.com/minio/minio-go/v7/pkg/set"
 	"github.com/minio/minio/internal/logger"
-	"github.com/pkg/errors"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -463,7 +463,7 @@ func (mg *MetricsGroup) Collect(ch chan<- prometheus.Metric) {
 	// There is no way to handle errors here, so we panic the current goroutine
 	// and the Metrics API handler returns a 500 HTTP status code. This should
 	// normally not happen, and usually indicates a bug.
-	logger.CriticalIf(GlobalContext, errors.Wrap(err, "failed to get metrics"))
+	logger.CriticalIf(GlobalContext, fmt.Errorf("failed to get metrics"+": %w", err))
 
 	promMetrics := metricValues.ToPromMetrics(mg.CollectorPath.metricPrefix(),
 		mg.ExtraLabels)

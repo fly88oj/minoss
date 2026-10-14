@@ -27,15 +27,13 @@ import (
 	"crypto"
 	"crypto/hmac"
 	"encoding/base64"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"time"
 
-	"github.com/buger/jsonparser"
 	"github.com/dustin/go-humanize"
 	jwtgo "github.com/golang-jwt/jwt/v4"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/minio/minio/internal/bpool"
 )
 
@@ -116,71 +114,27 @@ type StandardClaims struct {
 }
 
 // UnmarshalJSON provides custom JSON unmarshal.
-// This is mainly implemented for speed.
 func (c *StandardClaims) UnmarshalJSON(b []byte) (err error) {
-	return jsonparser.ObjectEach(b, func(key []byte, value []byte, dataType jsonparser.ValueType, _ int) error {
-		if len(key) == 0 {
-			return nil
-		}
-		switch key[0] {
-		case 'a':
-			if string(key) == "accessKey" {
-				if dataType != jsonparser.String {
-					return errors.New("accessKey: Expected string")
-				}
-				c.AccessKey, err = jsonparser.ParseString(value)
-				return err
-			}
-			if string(key) == "aud" {
-				if dataType != jsonparser.String {
-					return errors.New("aud: Expected string")
-				}
-				c.Audience, err = jsonparser.ParseString(value)
-				return err
-			}
-		case 'e':
-			if string(key) == "exp" {
-				if dataType != jsonparser.Number {
-					return errors.New("exp: Expected number")
-				}
-				c.ExpiresAt, err = jsonparser.ParseInt(value)
-				return err
-			}
-		case 'i':
-			if string(key) == "iat" {
-				if dataType != jsonparser.Number {
-					return errors.New("exp: Expected number")
-				}
-				c.IssuedAt, err = jsonparser.ParseInt(value)
-				return err
-			}
-			if string(key) == "iss" {
-				if dataType != jsonparser.String {
-					return errors.New("iss: Expected string")
-				}
-				c.Issuer, err = jsonparser.ParseString(value)
-				return err
-			}
-		case 'n':
-			if string(key) == "nbf" {
-				if dataType != jsonparser.Number {
-					return errors.New("nbf: Expected number")
-				}
-				c.NotBefore, err = jsonparser.ParseInt(value)
-				return err
-			}
-		case 's':
-			if string(key) == "sub" {
-				if dataType != jsonparser.String {
-					return errors.New("sub: Expected string")
-				}
-				c.Subject, err = jsonparser.ParseString(value)
-				return err
-			}
-		}
-		// Ignore unknown fields
-		return nil
-	})
+	claims := struct {
+		AccessKey string `json:"accessKey"`
+		Audience  string `json:"aud"`
+		ExpiresAt int64  `json:"exp"`
+		IssuedAt  int64  `json:"iat"`
+		Issuer    string `json:"iss"`
+		NotBefore int64  `json:"nbf"`
+		Subject   string `json:"sub"`
+	}{}
+	if err = json.Unmarshal(b, &claims); err != nil {
+		return err
+	}
+	c.AccessKey = claims.AccessKey
+	c.Audience = claims.Audience
+	c.ExpiresAt = claims.ExpiresAt
+	c.IssuedAt = claims.IssuedAt
+	c.Issuer = claims.Issuer
+	c.NotBefore = claims.NotBefore
+	c.Subject = claims.Subject
+	return nil
 }
 
 // MapClaims - implements custom unmarshaller
@@ -311,7 +265,6 @@ func (c *MapClaims) Map() map[string]any {
 
 // MarshalJSON marshals the MapClaims struct
 func (c *MapClaims) MarshalJSON() ([]byte, error) {
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	return json.Marshal(c.MapClaims)
 }
 
@@ -387,10 +340,13 @@ func ParseUnverifiedStandardClaims(token []byte, claims *StandardClaims, buf []b
 	headerDec := buf[:n]
 	buf = buf[n:]
 
-	alg, _, _, err := jsonparser.Get(headerDec, "alg")
-	if err != nil {
+	var joseHeader struct {
+		Alg string `json:"alg"`
+	}
+	if err = json.Unmarshal(headerDec, &joseHeader); err != nil {
 		return nil, &jwtgo.ValidationError{Inner: err, Errors: jwtgo.ValidationErrorMalformed}
 	}
+	alg := joseHeader.Alg
 
 	n, err = base64DecodeBytes(token[i+1:j], buf)
 	if err != nil {
@@ -500,17 +456,19 @@ func ParseUnverifiedMapClaims(token []byte, claims *MapClaims, buf []byte) (*Sig
 
 	headerDec := buf[:n]
 	buf = buf[n:]
-	alg, _, _, err := jsonparser.Get(headerDec, "alg")
-	if err != nil {
+	var joseHeader struct {
+		Alg string `json:"alg"`
+	}
+	if err = json.Unmarshal(headerDec, &joseHeader); err != nil {
 		return nil, &jwtgo.ValidationError{Inner: err, Errors: jwtgo.ValidationErrorMalformed}
 	}
+	alg := joseHeader.Alg
 
 	n, err = base64DecodeBytes(token[i+1:j], buf)
 	if err != nil {
 		return nil, &jwtgo.ValidationError{Inner: err, Errors: jwtgo.ValidationErrorMalformed}
 	}
 
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	if err = json.Unmarshal(buf[:n], &claims.MapClaims); err != nil {
 		return nil, &jwtgo.ValidationError{Inner: err, Errors: jwtgo.ValidationErrorMalformed}
 	}

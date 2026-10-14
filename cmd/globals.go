@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	consoleapi "github.com/minio/console/api"
@@ -37,7 +38,6 @@ import (
 	"github.com/minio/minio/internal/grid"
 	"github.com/minio/minio/internal/handlers"
 	"github.com/minio/minio/internal/kms"
-	"go.uber.org/atomic"
 
 	"github.com/dustin/go-humanize"
 	"github.com/minio/minio/internal/auth"

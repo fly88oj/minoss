@@ -43,7 +43,6 @@ import (
 	"github.com/minio/minio/internal/event"
 	xioutil "github.com/minio/minio/internal/ioutil"
 	"github.com/minio/pkg/v3/console"
-	uatomic "go.uber.org/atomic"
 )
 
 const (
@@ -64,12 +63,37 @@ var (
 
 	// Sleeper values are updated when config is loaded.
 	scannerSleeper                       = newDynamicSleeper(2, time.Second, true) // Keep defaults same as config defaults
-	scannerCycle                         = uatomic.NewDuration(dataScannerStartDelay)
-	scannerIdleMode                      = uatomic.NewInt32(0) // default is throttled when idle
-	scannerExcessObjectVersions          = uatomic.NewInt64(100)
-	scannerExcessObjectVersionsTotalSize = uatomic.NewInt64(1024 * 1024 * 1024 * 1024) // 1 TB
-	scannerExcessFolders                 = uatomic.NewInt64(50000)
+	scannerCycle                         = newAtomicDuration(dataScannerStartDelay)
+	scannerIdleMode                      = newAtomicInt32(0) // default is throttled when idle
+	scannerExcessObjectVersions          = newAtomicInt64(100)
+	scannerExcessObjectVersionsTotalSize = new(atomic.Int64) // 1 TB
+	scannerExcessFolders                 = newAtomicInt64(50000)
 )
+
+// sync/atomic lacks Duration and value constructors; small shims keep the
+// previous go.uber.org/atomic call sites unchanged.
+type atomicDuration struct{ v atomic.Int64 }
+
+func newAtomicDuration(d time.Duration) *atomicDuration {
+	var a atomicDuration
+	a.v.Store(int64(d))
+	return &a
+}
+
+func (d *atomicDuration) Store(t time.Duration) { d.v.Store(int64(t)) }
+func (d *atomicDuration) Load() time.Duration   { return time.Duration(d.v.Load()) }
+
+func newAtomicInt64(v int64) *atomic.Int64 {
+	var a atomic.Int64
+	a.Store(v)
+	return &a
+}
+
+func newAtomicInt32(v int32) *atomic.Int32 {
+	var a atomic.Int32
+	a.Store(v)
+	return &a
+}
 
 // initDataScanner will start the scanner in the background.
 func initDataScanner(ctx context.Context, objAPI ObjectLayer) {

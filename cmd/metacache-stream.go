@@ -19,13 +19,13 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"sync"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/klauspost/compress/s2"
 	"github.com/minio/minio/internal/bpool"
 	xioutil "github.com/minio/minio/internal/ioutil"
@@ -842,7 +842,6 @@ type metacacheBlock struct {
 }
 
 func (b metacacheBlock) headerKV() map[string]string {
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	v, err := json.Marshal(b)
 	if err != nil {
 		bugLogIf(context.Background(), err) // Unlikely

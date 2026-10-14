@@ -20,6 +20,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -32,7 +33,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	xhttp "github.com/minio/minio/internal/http"
 	xioutil "github.com/minio/minio/internal/ioutil"
 	types "github.com/minio/minio/internal/logger/target/loggertypes"
@@ -329,7 +329,7 @@ func (h *Target) startQueueProcessor(ctx context.Context, mainWorker bool) {
 	lastBatchProcess := time.Now()
 
 	buf := bytebufferpool.Get()
-	enc := jsoniter.ConfigCompatibleWithStandardLibrary.NewEncoder(buf)
+	enc := json.NewEncoder(buf)
 	defer bytebufferpool.Put(buf)
 
 	isDirQueue := h.config.QueueDir != ""

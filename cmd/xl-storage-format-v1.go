@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash/v2"
-	jsoniter "github.com/json-iterator/go"
 )
 
 // XL constants.
@@ -197,7 +196,6 @@ func (c ChecksumInfo) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON - custom checksum info unmarshaller
 func (c *ChecksumInfo) UnmarshalJSON(data []byte) error {
 	var info checksumInfoJSON
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	if err := json.Unmarshal(data, &info); err != nil {
 		return err
 	}

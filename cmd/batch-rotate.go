@@ -20,6 +20,7 @@ package cmd
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math/rand"
@@ -29,7 +30,6 @@ import (
 	"strings"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/minio/minio-go/v7/pkg/tags"
 	"github.com/minio/minio/internal/crypto"
 	xhttp "github.com/minio/minio/internal/http"
@@ -105,7 +105,6 @@ func (e BatchJobKeyRotateEncryption) Validate() error {
 				return err
 			}
 
-			json := jsoniter.ConfigCompatibleWithStandardLibrary
 			if err := json.Unmarshal(b, &ctx); err != nil {
 				return err
 			}
