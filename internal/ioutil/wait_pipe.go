@@ -57,11 +57,11 @@ func WaitPipe() (*PipeReader, *PipeWriter) {
 	r, w := io.Pipe()
 	var wg sync.WaitGroup
 	wg.Add(1)
-	return &PipeReader{
-			PipeReader: r,
-			wait:       wg.Wait,
-		}, &PipeWriter{
-			PipeWriter: w,
-			done:       wg.Done,
-		}
+	// Two locals rather than `return &PipeReader{...}, &PipeWriter{...}`: the
+	// gofumpt check in golangci-lint v2.14.0 and its own `fmt` pass disagree on
+	// a multi-line composite literal in a return, so the file ping-ponged
+	// between two forms depending on which command ran last.
+	pr := &PipeReader{PipeReader: r, wait: wg.Wait}
+	pw := &PipeWriter{PipeWriter: w, done: wg.Done}
+	return pr, pw
 }
