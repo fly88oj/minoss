@@ -1797,14 +1797,8 @@ func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Req
 			return
 		}
 
-		wantSize := int64(-1)
-		if size >= 0 {
-			info := ObjectInfo{Size: size}
-			wantSize = info.EncryptedSize()
-		}
-
 		// do not try to verify encrypted content
-		hashReader, err = hash.NewReader(ctx, etag.Wrap(reader, hashReader), wantSize, "", "", actualSize)
+		hashReader, err = hash.NewReader(ctx, etag.Wrap(reader, hashReader), encryptedSizeOrUnknown(size), "", "", actualSize)
 		if err != nil {
 			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
 			return
@@ -2189,14 +2183,8 @@ func (api objectAPIHandlers) PutObjectExtractHandler(w http.ResponseWriter, r *h
 				return err
 			}
 
-			wantSize := int64(-1)
-			if size >= 0 {
-				info := ObjectInfo{Size: size}
-				wantSize = info.EncryptedSize()
-			}
-
 			// do not try to verify encrypted content
-			hashReader, err = hash.NewReader(ctx, etag.Wrap(reader, hashReader), wantSize, "", "", actualSize)
+			hashReader, err = hash.NewReader(ctx, etag.Wrap(reader, hashReader), encryptedSizeOrUnknown(size), "", "", actualSize)
 			if err != nil {
 				return err
 			}

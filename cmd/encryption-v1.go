@@ -974,6 +974,17 @@ func (o *ObjectInfo) EncryptedSize() int64 {
 	return int64(size)
 }
 
+// encryptedSizeOrUnknown returns the encrypted size of a stream of the given
+// length, or -1 when the length is not known upfront - a chunked signature or
+// a compressed stream - so that the hash reader does not verify a length.
+func encryptedSizeOrUnknown(size int64) int64 {
+	if size < 0 {
+		return -1
+	}
+	info := ObjectInfo{Size: size}
+	return info.EncryptedSize()
+}
+
 // DecryptObjectInfo tries to decrypt the provided object if it is encrypted.
 // It fails if the object is encrypted and the HTTP headers don't contain
 // SSE-C headers or the object is not encrypted but SSE-C headers are provided. (AWS behavior)

@@ -1324,14 +1324,8 @@ func (api objectAPIHandlers) PostPolicyBucketHandler(w http.ResponseWriter, r *h
 				return
 			}
 
-			wantSize := int64(-1)
-			if actualSize >= 0 {
-				info := ObjectInfo{Size: actualSize}
-				wantSize = info.EncryptedSize()
-			}
-
 			// do not try to verify encrypted content/
-			hashReader, err = hash.NewReader(ctx, reader, wantSize, "", "", actualSize)
+			hashReader, err = hash.NewReader(ctx, reader, encryptedSizeOrUnknown(actualSize), "", "", actualSize)
 			if err != nil {
 				writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
 				return

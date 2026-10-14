@@ -248,6 +248,54 @@ func (api objectAPIHandlers) NewMultipartUploadHandler(w http.ResponseWriter, r 
 	writeSuccessResponseXML(w, encodedSuccessResponse)
 }
 
+// multipartPartParams parses and validates the 'uploadId' and 'partNumber'
+// request parameters shared by the multipart part handlers, writing the S3
+// error and returning ok=false for an unusable part number. Each handler keeps
+// its own size and max-part-number checks, in the order S3 specifies them.
+func multipartPartParams(ctx context.Context, w http.ResponseWriter, r *http.Request) (uploadID string, partID int, ok bool) {
+	uploadID = r.Form.Get(xhttp.UploadID)
+	partID, err := strconv.Atoi(r.Form.Get(xhttp.PartNumber))
+	if err != nil || partID <= 0 {
+		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrInvalidPart), r.URL)
+		return uploadID, 0, false
+	}
+	return uploadID, partID, true
+}
+
+// multipartPartKey returns the object encryption key of the ongoing multipart
+// upload: the SSE-C customer key when the request carries one, unwrapped
+// against the metadata stored at NewMultipartUpload time.
+func multipartPartKey(r *http.Request, bucket, object string, userDefined map[string]string) (crypto.ObjectKey, error) {
+	var key []byte
+	if crypto.SSEC.IsRequested(r.Header) {
+		var err error
+		if key, err = ParseSSECustomerRequest(r); err != nil {
+			return crypto.ObjectKey{}, err
+		}
+	}
+	key, err := decryptObjectMeta(key, bucket, object, userDefined)
+	if err != nil {
+		return crypto.ObjectKey{}, err
+	}
+	var objectKey crypto.ObjectKey
+	copy(objectKey[:], key)
+	return objectKey, nil
+}
+
+// encryptMultipartPart encrypts a part stream with the key derived for partID
+// from the multipart object key. The nonce is derived from the upload id and
+// part number, so the same part always encrypts to the same bytes.
+func encryptMultipartPart(in io.Reader, key crypto.ObjectKey, uploadID string, partID int) (io.Reader, error) {
+	partKey := key.DerivePartKey(uint32(partID))
+	tmp := sha256.Sum256(fmt.Append(nil, uploadID, partID))
+	var nonce [12]byte
+	copy(nonce[:], tmp[:12])
+	return sio.EncryptReader(in, sio.Config{
+		Key:   partKey[:],
+		Nonce: &nonce,
+	})
+}
+
 // CopyObjectPartHandler - uploads a part by copying data from an existing object as data source.
 func (api objectAPIHandlers) CopyObjectPartHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "CopyObjectPart")
@@ -311,12 +359,8 @@ func (api objectAPIHandlers) CopyObjectPartHandler(w http.ResponseWriter, r *htt
 		return
 	}
 
-	uploadID := r.Form.Get(xhttp.UploadID)
-	partIDString := r.Form.Get(xhttp.PartNumber)
-
-	partID, err := strconv.Atoi(partIDString)
-	if err != nil || partID <= 0 {
-		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrInvalidPart), r.URL)
+	uploadID, partID, ok := multipartPartParams(ctx, w, r)
+	if !ok {
 		return
 	}
 
@@ -511,43 +555,20 @@ func (api objectAPIHandlers) CopyObjectPartHandler(w http.ResponseWriter, r *htt
 			writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrSSEMultipartEncrypted), r.URL)
 			return
 		}
-		var key []byte
-		if crypto.SSEC.IsRequested(r.Header) {
-			key, err = ParseSSECustomerRequest(r)
-			if err != nil {
-				writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-				return
-			}
-		}
-		key, err = decryptObjectMeta(key, dstBucket, dstObject, mi.UserDefined)
+		objectEncryptionKey, err = multipartPartKey(r, dstBucket, dstObject, mi.UserDefined)
 		if err != nil {
 			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
 			return
 		}
-		copy(objectEncryptionKey[:], key)
 
-		var nonce [12]byte
-		tmp := sha256.Sum256(fmt.Append(nil, uploadID, partID))
-		copy(nonce[:], tmp[:12])
-
-		partEncryptionKey := objectEncryptionKey.DerivePartKey(uint32(partID))
-		encReader, err := sio.EncryptReader(reader, sio.Config{
-			Key:   partEncryptionKey[:],
-			Nonce: &nonce,
-		})
+		encReader, err := encryptMultipartPart(reader, objectEncryptionKey, uploadID, partID)
 		if err != nil {
 			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
 			return
 		}
 		reader = etag.Wrap(encReader, reader)
 
-		wantSize := int64(-1)
-		if length >= 0 {
-			info := ObjectInfo{Size: length}
-			wantSize = info.EncryptedSize()
-		}
-
-		srcInfo.Reader, err = hash.NewReader(ctx, reader, wantSize, "", "", actualPartSize)
+		srcInfo.Reader, err = hash.NewReader(ctx, reader, encryptedSizeOrUnknown(length), "", "", actualPartSize)
 		if err != nil {
 			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
 			return
@@ -644,12 +665,8 @@ func (api objectAPIHandlers) PutObjectPartHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	uploadID := r.Form.Get(xhttp.UploadID)
-	partIDString := r.Form.Get(xhttp.PartNumber)
-
-	partID, err := strconv.Atoi(partIDString)
-	if err != nil || partID <= 0 {
-		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrInvalidPart), r.URL)
+	uploadID, partID, ok := multipartPartParams(ctx, w, r)
+	if !ok {
 		return
 	}
 
@@ -798,25 +815,25 @@ func (api objectAPIHandlers) PutObjectPartHandler(w http.ResponseWriter, r *http
 			return
 		}
 
-		var key []byte
-		if crypto.SSEC.IsRequested(r.Header) {
-			key, err = ParseSSECustomerRequest(r)
-			if err != nil {
-				writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-				return
-			}
+		// Reject SSE-C combined with SSE-S3 even on the path below that does not
+		// re-encrypt the part. putOptsFromReq validates the key material through
+		// crypto.SSEC.ParseHTTP, which does not perform this compatibility
+		// check - it belongs to ParseSSECustomerRequest, previously called here
+		// unconditionally for every SSE-C request.
+		if crypto.S3.IsRequested(r.Header) && crypto.SSEC.IsRequested(r.Header) {
+			writeErrorResponse(ctx, w, toAPIError(ctx, crypto.ErrIncompatibleEncryptionMethod), r.URL)
+			return
 		}
 
 		if !sourceReplReq || !crypto.SSEC.IsEncrypted(mi.UserDefined) {
-			// Calculating object encryption key
-			key, err = decryptObjectMeta(key, bucket, object, mi.UserDefined)
+			// Unwrap the object key stored at NewMultipartUpload time, with the
+			// SSE-C customer key as the seed when the request carries one.
+			objectEncryptionKey, err = multipartPartKey(r, bucket, object, mi.UserDefined)
 			if err != nil {
 				writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
 				return
 			}
-			copy(objectEncryptionKey[:], key)
 
-			partEncryptionKey := objectEncryptionKey.DerivePartKey(uint32(partID))
 			in := io.Reader(hashReader)
 			if size > encryptBufferThreshold {
 				// The encryption reads in blocks of 64KB.
@@ -824,25 +841,13 @@ func (api objectAPIHandlers) PutObjectPartHandler(w http.ResponseWriter, r *http
 				in = bufio.NewReaderSize(hashReader, encryptBufferSize)
 			}
 
-			var nonce [12]byte
-			tmp := sha256.Sum256(fmt.Append(nil, uploadID, partID))
-			copy(nonce[:], tmp[:12])
-
-			reader, err = sio.EncryptReader(in, sio.Config{
-				Key:   partEncryptionKey[:],
-				Nonce: &nonce,
-			})
+			encReader, err := encryptMultipartPart(in, objectEncryptionKey, uploadID, partID)
 			if err != nil {
 				writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
 				return
 			}
-			wantSize := int64(-1)
-			if size >= 0 {
-				info := ObjectInfo{Size: size}
-				wantSize = info.EncryptedSize()
-			}
 			// do not try to verify encrypted content
-			hashReader, err = hash.NewReader(ctx, etag.Wrap(reader, hashReader), wantSize, "", "", actualSize)
+			hashReader, err = hash.NewReader(ctx, etag.Wrap(encReader, hashReader), encryptedSizeOrUnknown(size), "", "", actualSize)
 			if err != nil {
 				writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
 				return
