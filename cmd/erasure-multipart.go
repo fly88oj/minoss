@@ -194,8 +194,7 @@ func (er erasureObjects) cleanupStaleUploadsOnDisk(ctx context.Context, disk Sto
 			if time.Since(modTime) < globalAPIConfig.getStaleUploadsExpiry() {
 				return nil
 			}
-			w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-			return w.Run(func() error {
+			return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error {
 				wait := deleteMultipartCleanupSleeper.Timer(ctx)
 				pathUUID := mustGetUUID()
 				targetPath := pathJoin(drivePath, minioMetaTmpDeletedBucket, pathUUID)
@@ -213,8 +212,7 @@ func (er erasureObjects) cleanupStaleUploadsOnDisk(ctx context.Context, disk Sto
 		if time.Since(vi.Created) < globalAPIConfig.getStaleUploadsExpiry() {
 			return nil
 		}
-		w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-		return w.Run(func() error {
+		return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error {
 			wait := deleteMultipartCleanupSleeper.Timer(ctx)
 			pathUUID := mustGetUUID()
 			targetPath := pathJoin(drivePath, minioMetaTmpDeletedBucket, pathUUID)
@@ -236,8 +234,7 @@ func (er erasureObjects) cleanupStaleUploadsOnDisk(ctx context.Context, disk Sto
 		if err != nil {
 			return nil
 		}
-		w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-		return w.Run(func() error {
+		return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error {
 			wait := deleteMultipartCleanupSleeper.Timer(ctx)
 			if time.Since(vi.Created) > globalAPIConfig.getStaleUploadsExpiry() {
 				pathUUID := mustGetUUID()

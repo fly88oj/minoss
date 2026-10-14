@@ -137,26 +137,11 @@ func WithDeadline[V any](ctx context.Context, timeout time.Duration, work func(c
 	}
 }
 
-// DeadlineWorker implements the deadline/timeout resiliency pattern.
-type DeadlineWorker struct {
-	timeout time.Duration
-}
-
-// NewDeadlineWorker constructs a new DeadlineWorker with the given timeout.
-// To return values, use the WithDeadline helper instead.
-func NewDeadlineWorker(timeout time.Duration) *DeadlineWorker {
-	dw := &DeadlineWorker{
-		timeout: timeout,
-	}
-	return dw
-}
-
-// Run runs the given function, passing it a stopper channel. If the deadline passes before
-// the function finishes executing, Run returns context.DeadlineExceeded to the caller.
-// channel so that the work function can attempt to exit gracefully.
-// Multiple calls to Run will run independently of each other.
-func (d *DeadlineWorker) Run(work func() error) error {
-	_, err := WithDeadline[struct{}](context.Background(), d.timeout, func(ctx context.Context) (struct{}, error) {
+// RunWithDeadline runs work with the given timeout; if the deadline
+// passes before the function finishes executing, the context error is
+// returned. To return values, use the WithDeadline helper instead.
+func RunWithDeadline(timeout time.Duration, work func() error) error {
+	_, err := WithDeadline[struct{}](context.Background(), timeout, func(context.Context) (struct{}, error) {
 		return struct{}{}, work()
 	})
 	return err

@@ -1206,8 +1206,7 @@ func (s *xlStorage) cleanupTrashImmediateCallers(ctx context.Context) {
 		case entry := <-s.immediatePurge:
 			// Add deadlines such that immediate purge is not
 			// perpetually hung here.
-			w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-			w.Run(func() error {
+			xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error {
 				return removeAll(entry)
 			})
 		}
@@ -1291,8 +1290,7 @@ func (s *xlStorage) readAllData(ctx context.Context, volume, volumeDir string, f
 }
 
 func (s *xlStorage) moveToTrash(filePath string, recursive, immediatePurge bool) (err error) {
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() (err error) {
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error {
 		return s.moveToTrashNoDeadline(filePath, recursive, immediatePurge)
 	})
 }
@@ -3207,8 +3205,7 @@ func (s *xlStorage) ReadMultiple(ctx context.Context, req ReadMultipleReq, resp 
 		var mt time.Time
 
 		fullPath := pathJoin(volumeDir, req.Prefix, f)
-		w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-		if err := w.Run(func() (err error) {
+		if err := xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() (err error) {
 			if req.MetadataOnly {
 				data, mt, err = s.readMetadataWithDMTime(ctx, fullPath)
 			} else {

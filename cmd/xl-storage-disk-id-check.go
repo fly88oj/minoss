@@ -347,8 +347,7 @@ func (p *xlStorageDiskIDCheck) MakeVolBulk(ctx context.Context, volumes ...strin
 	}
 	defer done(0, &err)
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error { return p.storage.MakeVolBulk(ctx, volumes...) })
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error { return p.storage.MakeVolBulk(ctx, volumes...) })
 }
 
 func (p *xlStorageDiskIDCheck) MakeVol(ctx context.Context, volume string) (err error) {
@@ -358,8 +357,7 @@ func (p *xlStorageDiskIDCheck) MakeVol(ctx context.Context, volume string) (err 
 	}
 	defer done(0, &err)
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error { return p.storage.MakeVol(ctx, volume) })
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error { return p.storage.MakeVol(ctx, volume) })
 }
 
 func (p *xlStorageDiskIDCheck) ListVols(ctx context.Context) (vi []VolInfo, err error) {
@@ -391,8 +389,7 @@ func (p *xlStorageDiskIDCheck) DeleteVol(ctx context.Context, volume string, for
 	}
 	defer done(0, &err)
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error { return p.storage.DeleteVol(ctx, volume, forceDelete) })
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error { return p.storage.DeleteVol(ctx, volume, forceDelete) })
 }
 
 func (p *xlStorageDiskIDCheck) ListDir(ctx context.Context, origvolume, volume, dirPath string, count int) (s []string, err error) {
@@ -428,8 +425,7 @@ func (p *xlStorageDiskIDCheck) AppendFile(ctx context.Context, volume string, pa
 	}
 	defer done(int64(len(buf)), &err)
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error {
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error {
 		return p.storage.AppendFile(ctx, volume, path, buf)
 	})
 }
@@ -463,8 +459,7 @@ func (p *xlStorageDiskIDCheck) RenamePart(ctx context.Context, srcVolume, srcPat
 	}
 	defer done(0, &err)
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error {
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error {
 		return p.storage.RenamePart(ctx, srcVolume, srcPath, dstVolume, dstPath, meta, skipParent)
 	})
 }
@@ -476,8 +471,7 @@ func (p *xlStorageDiskIDCheck) RenameFile(ctx context.Context, srcVolume, srcPat
 	}
 	defer done(0, &err)
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error { return p.storage.RenameFile(ctx, srcVolume, srcPath, dstVolume, dstPath) })
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error { return p.storage.RenameFile(ctx, srcVolume, srcPath, dstVolume, dstPath) })
 }
 
 func (p *xlStorageDiskIDCheck) RenameData(ctx context.Context, srcVolume, srcPath string, fi FileInfo, dstVolume, dstPath string, opts RenameOptions) (res RenameDataResp, err error) {
@@ -531,8 +525,7 @@ func (p *xlStorageDiskIDCheck) Delete(ctx context.Context, volume string, path s
 	}
 	defer done(0, &err)
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error { return p.storage.Delete(ctx, volume, path, deleteOpts) })
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error { return p.storage.Delete(ctx, volume, path, deleteOpts) })
 }
 
 // DeleteVersions deletes slice of versions, it can be same object
@@ -607,8 +600,7 @@ func (p *xlStorageDiskIDCheck) WriteAll(ctx context.Context, volume string, path
 	}
 	defer done(int64(len(b)), &err)
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error { return p.storage.WriteAll(ctx, volume, path, b) })
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error { return p.storage.WriteAll(ctx, volume, path, b) })
 }
 
 func (p *xlStorageDiskIDCheck) DeleteVersion(ctx context.Context, volume, path string, fi FileInfo, forceDelMarker bool, opts DeleteOptions) (err error) {
@@ -635,8 +627,7 @@ func (p *xlStorageDiskIDCheck) DeleteVersion(ctx context.Context, volume, path s
 		}
 	}()
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error { return p.storage.DeleteVersion(ctx, volume, path, fi, forceDelMarker, opts) })
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error { return p.storage.DeleteVersion(ctx, volume, path, fi, forceDelMarker, opts) })
 }
 
 func (p *xlStorageDiskIDCheck) UpdateMetadata(ctx context.Context, volume, path string, fi FileInfo, opts UpdateMetadataOpts) (err error) {
@@ -646,8 +637,7 @@ func (p *xlStorageDiskIDCheck) UpdateMetadata(ctx context.Context, volume, path 
 	}
 	defer done(0, &err)
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error { return p.storage.UpdateMetadata(ctx, volume, path, fi, opts) })
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error { return p.storage.UpdateMetadata(ctx, volume, path, fi, opts) })
 }
 
 func (p *xlStorageDiskIDCheck) WriteMetadata(ctx context.Context, origvolume, volume, path string, fi FileInfo) (err error) {
@@ -657,8 +647,7 @@ func (p *xlStorageDiskIDCheck) WriteMetadata(ctx context.Context, origvolume, vo
 	}
 	defer done(0, &err)
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error { return p.storage.WriteMetadata(ctx, origvolume, volume, path, fi) })
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error { return p.storage.WriteMetadata(ctx, origvolume, volume, path, fi) })
 }
 
 func (p *xlStorageDiskIDCheck) ReadVersion(ctx context.Context, origvolume, volume, path, versionID string, opts ReadOptions) (fi FileInfo, err error) {
@@ -747,8 +736,7 @@ func (p *xlStorageDiskIDCheck) CleanAbandonedData(ctx context.Context, volume st
 	}
 	defer done(0, &err)
 
-	w := xioutil.NewDeadlineWorker(globalDriveConfig.GetMaxTimeout())
-	return w.Run(func() error { return p.storage.CleanAbandonedData(ctx, volume, path) })
+	return xioutil.RunWithDeadline(globalDriveConfig.GetMaxTimeout(), func() error { return p.storage.CleanAbandonedData(ctx, volume, path) })
 }
 
 func storageTrace(s storageMetric, startTime time.Time, duration time.Duration, path string, size int64, err string, custom map[string]string) madmin.TraceInfo {
