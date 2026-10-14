@@ -468,7 +468,6 @@ func initAllSubsystems(ctx context.Context) {
 	globalBucketMonitor = bandwidth.NewMonitor(ctx, uint64(totalNodeCount()))
 
 	// Create a new config system.
-	globalConfigSys = NewConfigSys()
 
 	// Create new IAM system.
 	globalIAMSys = NewIAMSys()
@@ -631,7 +630,7 @@ func initConfigSubsystem(ctx context.Context, newObject ObjectLayer) error {
 	// ensures top level retry works accordingly.
 
 	// Initialize config system.
-	if err := globalConfigSys.Init(newObject); err != nil {
+	if err := initConfig(newObject); err != nil {
 		if configRetriableErrors(err) {
 			return fmt.Errorf("Unable to initialize config system: %w", err)
 		}

@@ -219,9 +219,6 @@ var (
 	globalMinioEndpoint    = ""
 	globalMinioEndpointURL *xnet.URL
 
-	// globalConfigSys server config system.
-	globalConfigSys *ConfigSys
-
 	globalNotificationSys *NotificationSys
 
 	globalEventNotifier    *EventNotifier

@@ -95,6 +95,123 @@ func setHeadGetRespHeaders(w http.ResponseWriter, reqParams url.Values) {
 	}
 }
 
+// authorizeGetHeadObject authorizes a GetObject action; on failure the
+// error is written via writeErr (the GET variant writes a body, HEAD only
+// headers) and false is returned. Anonymous requests get the S3-documented
+// behavior where the error depends on the caller's s3:ListBucket permission.
+func authorizeGetHeadObject(ctx context.Context, r *http.Request, objectAPI ObjectLayer, bucket, object string, opts ObjectOptions, writeErr func(APIError)) bool {
+	if s3Error := authenticateRequest(ctx, r, policy.GetObjectAction); s3Error != ErrNone {
+		if getRequestAuthType(r) == authTypeAnonymous {
+			// As per "Permission" section in
+			// https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectGET.html
+			// If the object you request does not exist, the error S3 returns
+			// depends on whether you also have the s3:ListBucket permission:
+			// with it a 404 ("no such key") is returned, without it a 403
+			// ("access denied").
+			if globalPolicySys.IsAllowed(policy.BucketPolicyArgs{
+				Action:          policy.ListBucketAction,
+				BucketName:      bucket,
+				ConditionValues: getConditionValues(r, "", auth.AnonymousCredentials),
+				IsOwner:         false,
+			}) {
+				if _, err := objectAPI.GetObjectInfo(ctx, bucket, object, opts); toAPIError(ctx, err).Code == "NoSuchKey" {
+					s3Error = ErrNoSuchKey
+				}
+			}
+		}
+		writeErr(errorCodes.ToAPIErr(s3Error))
+		return false
+	}
+	return true
+}
+
+// getRangeSpec parses the Range header shared by the GET/HEAD object
+// handlers. It returns ok=false after writing an error when 'Range' and
+// 'partNumber' are combined or the range is invalid; other parse errors are
+// ignored and treated as a regular full request, like Amazon S3.
+func getRangeSpec(r *http.Request, opts ObjectOptions, writeErr func(APIError)) (rs *HTTPRangeSpec, ok bool) {
+	rangeHeader := r.Header.Get(xhttp.Range)
+	if rangeHeader == "" {
+		return nil, true
+	}
+	// Both 'Range' and 'partNumber' cannot be specified at the same time.
+	if opts.PartNumber > 0 {
+		writeErr(errorCodes.ToAPIErr(ErrInvalidRangePartNumber))
+		return nil, false
+	}
+	rs, rangeErr := parseRequestRangeSpec(rangeHeader)
+	if errors.Is(rangeErr, errInvalidRange) {
+		writeErr(errorCodes.ToAPIErr(ErrInvalidRange))
+		return nil, false
+	}
+	return rs, true
+}
+
+// evalExpiryForRead evaluates the expiry lifecycle rules shared by the
+// GET/HEAD object handlers. It returns false after writing an error if the
+// object must be treated as expired (NoSuchKey); restored objects fall
+// through and are still served.
+func evalExpiryForRead(ctx context.Context, bucket string, objInfo ObjectInfo, src lcEventSrc, writeErr func(APIError)) bool {
+	lc, err := globalLifecycleSys.Get(bucket)
+	if err != nil {
+		return true
+	}
+	rcfg, err := globalBucketObjectLockSys.Get(bucket)
+	if err != nil {
+		writeErr(toAPIError(ctx, err))
+		return false
+	}
+	replcfg, err := getReplicationConfig(ctx, bucket)
+	if err != nil {
+		writeErr(toAPIError(ctx, err))
+		return false
+	}
+	event := evalActionFromLifecycle(ctx, *lc, rcfg, replcfg, objInfo)
+	if event.Action.Delete() {
+		// apply whatever the expiry rule is.
+		applyExpiryRule(event, src, objInfo)
+		if !event.Action.DeleteRestored() {
+			// If the ILM action is not on restored object return error.
+			writeErr(errorCodes.ToAPIErr(ErrNoSuchKey))
+			return false
+		}
+	}
+	return true
+}
+
+// setCommonObjectResponseHeaders filters object-lock metadata by permission
+// and sets the checksum, standard, parts-count and requested response
+// headers shared by the GET/HEAD object handlers. It returns false after
+// writing an error on failure.
+func setCommonObjectResponseHeaders(ctx context.Context, w http.ResponseWriter, r *http.Request, bucket, object string, objInfo ObjectInfo, rs *HTTPRangeSpec, opts ObjectOptions, writeErr func(APIError)) bool {
+	// filter object lock metadata if permission does not permit
+	getRetPerms := checkRequestAuthType(ctx, r, policy.GetObjectRetentionAction, bucket, object)
+	legalHoldPerms := checkRequestAuthType(ctx, r, policy.GetObjectLegalHoldAction, bucket, object)
+
+	// filter object lock metadata if permission does not permit
+	objInfo.UserDefined = objectlock.FilterObjectLockMetadata(objInfo.UserDefined, getRetPerms != ErrNone, legalHoldPerms != ErrNone)
+
+	if r.Header.Get(xhttp.AmzChecksumMode) == "ENABLED" && rs == nil {
+		// AWS S3 silently drops checksums on range requests.
+		cs, _ := objInfo.decryptChecksums(opts.PartNumber, r.Header)
+		hash.AddChecksumHeader(w, cs)
+	}
+
+	if err := setObjectHeaders(ctx, w, objInfo, rs, opts); err != nil {
+		writeErr(toAPIError(ctx, err))
+		return false
+	}
+
+	// Set Parts Count Header
+	if opts.PartNumber > 0 && len(objInfo.Parts) > 0 {
+		setPartsCountHeaders(w, objInfo)
+	}
+
+	// Set any additional requested response headers.
+	setHeadGetRespHeaders(w, r.Form)
+	return true
+}
+
 func (api objectAPIHandlers) getObjectHandler(ctx context.Context, objectAPI ObjectLayer, bucket, object string, w http.ResponseWriter, r *http.Request) {
 	if crypto.S3.IsRequested(r.Header) || crypto.S3KMS.IsRequested(r.Header) { // If SSE-S3 or SSE-KMS present -> AWS fails with undefined error
 		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrBadRequest), r.URL)
@@ -107,62 +224,17 @@ func (api objectAPIHandlers) getObjectHandler(ctx context.Context, objectAPI Obj
 		return
 	}
 
-	// Check for auth type to return S3 compatible error.
-	// type to return the correct error (NoSuchKey vs AccessDenied)
-	if s3Error := authenticateRequest(ctx, r, policy.GetObjectAction); s3Error != ErrNone {
-		if getRequestAuthType(r) == authTypeAnonymous {
-			// As per "Permission" section in
-			// https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectGET.html
-			// If the object you request does not exist,
-			// the error Amazon S3 returns depends on
-			// whether you also have the s3:ListBucket
-			// permission.
-			// * If you have the s3:ListBucket permission
-			//   on the bucket, Amazon S3 will return an
-			//   HTTP status code 404 ("no such key")
-			//   error.
-			// * if you don’t have the s3:ListBucket
-			//   permission, Amazon S3 will return an HTTP
-			//   status code 403 ("access denied") error.`
-			if globalPolicySys.IsAllowed(policy.BucketPolicyArgs{
-				Action:          policy.ListBucketAction,
-				BucketName:      bucket,
-				ConditionValues: getConditionValues(r, "", auth.AnonymousCredentials),
-				IsOwner:         false,
-			}) {
-				getObjectInfo := objectAPI.GetObjectInfo
-
-				_, err = getObjectInfo(ctx, bucket, object, opts)
-				if toAPIError(ctx, err).Code == "NoSuchKey" {
-					s3Error = ErrNoSuchKey
-				}
-			}
-		}
-		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Error), r.URL)
+	writeErr := func(apiErr APIError) { writeErrorResponse(ctx, w, apiErr, r.URL) }
+	if !authorizeGetHeadObject(ctx, r, objectAPI, bucket, object, opts, writeErr) {
 		return
 	}
 
 	getObjectNInfo := objectAPI.GetObjectNInfo
 
 	// Get request range.
-	var rs *HTTPRangeSpec
-	var rangeErr error
-	rangeHeader := r.Header.Get(xhttp.Range)
-	if rangeHeader != "" {
-		// Both 'Range' and 'partNumber' cannot be specified at the same time
-		if opts.PartNumber > 0 {
-			writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrInvalidRangePartNumber), r.URL)
-			return
-		}
-
-		rs, rangeErr = parseRequestRangeSpec(rangeHeader)
-		// Handle only errInvalidRange. Ignore other
-		// parse error and treat it as regular Get
-		// request like Amazon S3.
-		if errors.Is(rangeErr, errInvalidRange) {
-			writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrInvalidRange), r.URL)
-			return
-		}
+	rs, ok := getRangeSpec(r, opts, writeErr)
+	if !ok {
+		return
 	}
 
 	// Validate pre-conditions if any.
@@ -253,39 +325,12 @@ func (api objectAPIHandlers) getObjectHandler(ctx context.Context, objectAPI Obj
 	objInfo := gr.ObjInfo
 
 	if !proxy.Proxy { // apply lifecycle rules only for local requests
-		// Automatically remove the object/version if an expiry lifecycle rule can be applied
-		if lc, err := globalLifecycleSys.Get(bucket); err == nil {
-			rcfg, err := globalBucketObjectLockSys.Get(bucket)
-			if err != nil {
-				writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-				return
-			}
-			replcfg, err := getReplicationConfig(ctx, bucket)
-			if err != nil {
-				writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-				return
-			}
-			event := evalActionFromLifecycle(ctx, *lc, rcfg, replcfg, objInfo)
-			if event.Action.Delete() {
-				// apply whatever the expiry rule is.
-				applyExpiryRule(event, lcEventSrc_s3GetObject, objInfo)
-				if !event.Action.DeleteRestored() {
-					// If the ILM action is not on restored object return error.
-					writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrNoSuchKey), r.URL)
-					return
-				}
-			}
+		if !evalExpiryForRead(ctx, bucket, objInfo, lcEventSrc_s3GetObject, writeErr) {
+			return
 		}
 
 		QueueReplicationHeal(ctx, bucket, gr.ObjInfo, 0)
 	}
-
-	// filter object lock metadata if permission does not permit
-	getRetPerms := checkRequestAuthType(ctx, r, policy.GetObjectRetentionAction, bucket, object)
-	legalHoldPerms := checkRequestAuthType(ctx, r, policy.GetObjectLegalHoldAction, bucket, object)
-
-	// filter object lock metadata if permission does not permit
-	objInfo.UserDefined = objectlock.FilterObjectLockMetadata(objInfo.UserDefined, getRetPerms != ErrNone, legalHoldPerms != ErrNone)
 
 	// Set encryption response headers
 	if kind, isEncrypted := crypto.IsEncrypted(objInfo.UserDefined); isEncrypted {
@@ -305,23 +350,9 @@ func (api objectAPIHandlers) getObjectHandler(ctx context.Context, objectAPI Obj
 		objInfo.ETag = getDecryptedETag(r.Header, objInfo, false)
 	}
 
-	if r.Header.Get(xhttp.AmzChecksumMode) == "ENABLED" && rs == nil {
-		// AWS S3 silently drops checksums on range requests.
-		cs, _ := objInfo.decryptChecksums(opts.PartNumber, r.Header)
-		hash.AddChecksumHeader(w, cs)
-	}
-
-	if err = setObjectHeaders(ctx, w, objInfo, rs, opts); err != nil {
-		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
+	if !setCommonObjectResponseHeaders(ctx, w, r, bucket, object, objInfo, rs, opts, writeErr) {
 		return
 	}
-
-	// Set Parts Count Header
-	if opts.PartNumber > 0 && len(objInfo.Parts) > 0 {
-		setPartsCountHeaders(w, objInfo)
-	}
-
-	setHeadGetRespHeaders(w, r.Form)
 
 	var iw io.Writer = w
 
@@ -542,64 +573,15 @@ func (api objectAPIHandlers) headObjectHandler(ctx context.Context, objectAPI Ob
 		return
 	}
 
-	// Check for auth type to return S3 compatible error.
-	// type to return the correct error (NoSuchKey vs AccessDenied)
-	if s3Error := authenticateRequest(ctx, r, policy.GetObjectAction); s3Error != ErrNone {
-		if getRequestAuthType(r) == authTypeAnonymous {
-			// As per "Permission" section in
-			// https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectHEAD.html
-			// If the object you request does not exist,
-			// the error Amazon S3 returns depends on
-			// whether you also have the s3:ListBucket
-			// permission.
-			// * If you have the s3:ListBucket permission
-			//   on the bucket, Amazon S3 will return an
-			//   HTTP status code 404 ("no such key")
-			//   error.
-			// * if you don’t have the s3:ListBucket
-			//   permission, Amazon S3 will return an HTTP
-			//   status code 403 ("access denied") error.`
-			if globalPolicySys.IsAllowed(policy.BucketPolicyArgs{
-				Action:          policy.ListBucketAction,
-				BucketName:      bucket,
-				ConditionValues: getConditionValues(r, "", auth.AnonymousCredentials),
-				IsOwner:         false,
-			}) {
-				getObjectInfo := objectAPI.GetObjectInfo
-
-				_, err = getObjectInfo(ctx, bucket, object, opts)
-				if toAPIError(ctx, err).Code == "NoSuchKey" {
-					s3Error = ErrNoSuchKey
-				}
-			}
-		}
-		writeErrorResponseHeadersOnly(w, errorCodes.ToAPIErr(s3Error))
+	writeErr := func(apiErr APIError) { writeErrorResponseHeadersOnly(w, apiErr) }
+	if !authorizeGetHeadObject(ctx, r, objectAPI, bucket, object, opts, writeErr) {
 		return
 	}
 
 	// Get request range.
-	var rs *HTTPRangeSpec
-	rangeHeader := r.Header.Get(xhttp.Range)
-	if rangeHeader != "" {
-		rs, _ = parseRequestRangeSpec(rangeHeader)
-	}
-
-	if rangeHeader != "" {
-		// Both 'Range' and 'partNumber' cannot be specified at the same time
-		if opts.PartNumber > 0 {
-			writeErrorResponseHeadersOnly(w, errorCodes.ToAPIErr(ErrInvalidRangePartNumber))
-			return
-		}
-
-		if rs, err = parseRequestRangeSpec(rangeHeader); err != nil {
-			// Handle only errInvalidRange. Ignore other
-			// parse error and treat it as regular Get
-			// request like Amazon S3.
-			if errors.Is(err, errInvalidRange) {
-				writeErrorResponseHeadersOnly(w, errorCodes.ToAPIErr(ErrInvalidRange))
-				return
-			}
-		}
+	rs, rangeOK := getRangeSpec(r, opts, writeErr)
+	if !rangeOK {
+		return
 	}
 
 	opts.FastGetObjInfo = true
@@ -665,38 +647,11 @@ func (api objectAPIHandlers) headObjectHandler(ctx context.Context, objectAPI Ob
 	}
 
 	if !proxy.Proxy { // apply lifecycle rules only locally not for proxied requests
-		// Automatically remove the object/version if an expiry lifecycle rule can be applied
-		if lc, err := globalLifecycleSys.Get(bucket); err == nil {
-			rcfg, err := globalBucketObjectLockSys.Get(bucket)
-			if err != nil {
-				writeErrorResponseHeadersOnly(w, toAPIError(ctx, err))
-				return
-			}
-			replcfg, err := getReplicationConfig(ctx, bucket)
-			if err != nil {
-				writeErrorResponseHeadersOnly(w, toAPIError(ctx, err))
-				return
-			}
-			event := evalActionFromLifecycle(ctx, *lc, rcfg, replcfg, objInfo)
-			if event.Action.Delete() {
-				// apply whatever the expiry rule is.
-				applyExpiryRule(event, lcEventSrc_s3HeadObject, objInfo)
-				if !event.Action.DeleteRestored() {
-					// If the ILM action is not on restored object return error.
-					writeErrorResponseHeadersOnly(w, errorCodes.ToAPIErr(ErrNoSuchKey))
-					return
-				}
-			}
+		if !evalExpiryForRead(ctx, bucket, objInfo, lcEventSrc_s3HeadObject, writeErr) {
+			return
 		}
 		QueueReplicationHeal(ctx, bucket, objInfo, 0)
 	}
-
-	// filter object lock metadata if permission does not permit
-	getRetPerms := checkRequestAuthType(ctx, r, policy.GetObjectRetentionAction, bucket, object)
-	legalHoldPerms := checkRequestAuthType(ctx, r, policy.GetObjectLegalHoldAction, bucket, object)
-
-	// filter object lock metadata if permission does not permit
-	objInfo.UserDefined = objectlock.FilterObjectLockMetadata(objInfo.UserDefined, getRetPerms != ErrNone, legalHoldPerms != ErrNone)
 
 	if _, err = DecryptObjectInfo(&objInfo, r); err != nil {
 		writeErrorResponseHeadersOnly(w, toAPIError(ctx, err))
@@ -728,25 +683,9 @@ func (api objectAPIHandlers) headObjectHandler(ctx context.Context, objectAPI Ob
 		w.Header().Set(xhttp.AmzServerSideEncryptionCustomerKeyMD5, r.Header.Get(xhttp.AmzServerSideEncryptionCustomerKeyMD5))
 	}
 
-	if r.Header.Get(xhttp.AmzChecksumMode) == "ENABLED" && rs == nil {
-		// AWS S3 silently drops checksums on range requests.
-		cs, _ := objInfo.decryptChecksums(opts.PartNumber, r.Header)
-		hash.AddChecksumHeader(w, cs)
-	}
-
-	// Set standard object headers.
-	if err = setObjectHeaders(ctx, w, objInfo, rs, opts); err != nil {
-		writeErrorResponseHeadersOnly(w, toAPIError(ctx, err))
+	if !setCommonObjectResponseHeaders(ctx, w, r, bucket, object, objInfo, rs, opts, writeErr) {
 		return
 	}
-
-	// Set Parts Count Header
-	if opts.PartNumber > 0 && len(objInfo.Parts) > 0 {
-		setPartsCountHeaders(w, objInfo)
-	}
-
-	// Set any additional requested response headers.
-	setHeadGetRespHeaders(w, r.Form)
 
 	// Successful response.
 	if rs != nil || opts.PartNumber > 0 {

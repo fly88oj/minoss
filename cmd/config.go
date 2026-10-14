@@ -176,23 +176,6 @@ func readServerConfig(ctx context.Context, objAPI ObjectLayer, data []byte) (con
 	return srvCfg.Merge(), nil
 }
 
-// ConfigSys - config system.
-type ConfigSys struct{}
-
-// Init - initializes config system from config.json.
-func (sys *ConfigSys) Init(objAPI ObjectLayer) error {
-	if objAPI == nil {
-		return errInvalidArgument
-	}
-
-	return initConfig(objAPI)
-}
-
-// NewConfigSys - creates new config system object.
-func NewConfigSys() *ConfigSys {
-	return &ConfigSys{}
-}
-
 // Initialize and load config from remote etcd or local config directory
 func initConfig(objAPI ObjectLayer) (err error) {
 	bootstrapTraceMsg("load the configuration")
