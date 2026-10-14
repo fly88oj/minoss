@@ -40,7 +40,6 @@ import (
 	"github.com/minio/minio/internal/event"
 	xhttp "github.com/minio/minio/internal/http"
 	"github.com/minio/minio/internal/logger"
-	"github.com/minio/minio/internal/s3select"
 	xnet "github.com/minio/pkg/v3/net"
 	"github.com/zeebo/xxh3"
 )
@@ -820,36 +819,13 @@ func (o *OutputLocation) IsEmpty() bool {
 	return o.S3.BucketName == ""
 }
 
-// SelectParameters specifies sql select parameters
-type SelectParameters struct {
-	s3select.S3Select
-}
-
-// IsEmpty returns true if no select parameters set
-func (sp *SelectParameters) IsEmpty() bool {
-	return sp == nil
-}
-
-var selectParamsXMLName = "SelectParameters"
-
-// UnmarshalXML - decodes XML data.
-func (sp *SelectParameters) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
-	// Essentially the same as S3Select barring the xml name.
-	if start.Name.Local == selectParamsXMLName {
-		start.Name = xml.Name{Space: "", Local: "SelectRequest"}
-	}
-	return sp.S3Select.UnmarshalXML(d, start)
-}
-
 // RestoreObjectRequest - xml to restore a transitioned object
 type RestoreObjectRequest struct {
-	XMLName          xml.Name           `xml:"http://s3.amazonaws.com/doc/2006-03-01/ RestoreRequest" json:"-"`
-	Days             int                `xml:"Days,omitempty"`
-	Type             RestoreRequestType `xml:"Type,omitempty"`
-	Tier             string             `xml:"Tier"`
-	Description      string             `xml:"Description,omitempty"`
-	SelectParameters *SelectParameters  `xml:"SelectParameters,omitempty"`
-	OutputLocation   OutputLocation     `xml:"OutputLocation,omitempty"`
+	XMLName     xml.Name           `xml:"http://s3.amazonaws.com/doc/2006-03-01/ RestoreRequest" json:"-"`
+	Days        int                `xml:"Days,omitempty"`
+	Type        RestoreRequestType `xml:"Type,omitempty"`
+	Tier        string             `xml:"Tier"`
+	Description string             `xml:"Description,omitempty"`
 }
 
 // Maximum 2MiB size per restore object request.
@@ -866,37 +842,11 @@ func parseRestoreRequest(reader io.Reader) (*RestoreObjectRequest, error) {
 
 // validate a RestoreObjectRequest as per AWS S3 spec https://docs.aws.amazon.com/AmazonS3/latest/API/API_RestoreObject.html
 func (r *RestoreObjectRequest) validate(ctx context.Context, objAPI ObjectLayer) error {
-	if r.Type != SelectRestoreRequest && !r.SelectParameters.IsEmpty() {
-		return fmt.Errorf("Select parameters can only be specified with SELECT request type")
+	if r.Type == SelectRestoreRequest {
+		return fmt.Errorf("SELECT restore requests are not supported in this build")
 	}
-	if r.Type == SelectRestoreRequest && r.SelectParameters.IsEmpty() {
-		return fmt.Errorf("SELECT restore request requires select parameters to be specified")
-	}
-
-	if r.Type != SelectRestoreRequest && !r.OutputLocation.IsEmpty() {
-		return fmt.Errorf("OutputLocation required only for SELECT request type")
-	}
-	if r.Type == SelectRestoreRequest && r.OutputLocation.IsEmpty() {
-		return fmt.Errorf("OutputLocation required for SELECT requests")
-	}
-
-	if r.Days != 0 && r.Type == SelectRestoreRequest {
-		return fmt.Errorf("Days cannot be specified with SELECT restore request")
-	}
-	if r.Days == 0 && r.Type != SelectRestoreRequest {
+	if r.Days == 0 {
 		return fmt.Errorf("restoration days should be at least 1")
-	}
-	// Check if bucket exists.
-	if !r.OutputLocation.IsEmpty() {
-		if _, err := objAPI.GetBucketInfo(ctx, r.OutputLocation.S3.BucketName, BucketOptions{}); err != nil {
-			return err
-		}
-		if r.OutputLocation.S3.Prefix == "" {
-			return fmt.Errorf("Prefix is a required parameter in OutputLocation")
-		}
-		if r.OutputLocation.S3.Encryption.EncryptionType != xhttp.AmzEncryptionAES {
-			return NotImplemented{}
-		}
 	}
 	return nil
 }
@@ -934,32 +884,7 @@ func postRestoreOpts(ctx context.Context, r *http.Request, bucket, object string
 // set ObjectOptions for PUT call to restore temporary copy of transitioned data
 func putRestoreOpts(bucket, object string, rreq *RestoreObjectRequest, objInfo ObjectInfo) (putOpts ObjectOptions) {
 	meta := make(map[string]string)
-	sc := rreq.OutputLocation.S3.StorageClass
-	if sc == "" {
-		sc = objInfo.StorageClass
-	}
-	meta[strings.ToLower(xhttp.AmzStorageClass)] = sc
-
-	if rreq.Type == SelectRestoreRequest {
-		for _, v := range rreq.OutputLocation.S3.UserMetadata {
-			if !stringsHasPrefixFold(v.Name, "x-amz-meta") {
-				meta["x-amz-meta-"+v.Name] = v.Value
-				continue
-			}
-			meta[v.Name] = v.Value
-		}
-		if tags := rreq.OutputLocation.S3.Tagging.String(); tags != "" {
-			meta[xhttp.AmzObjectTagging] = tags
-		}
-		if rreq.OutputLocation.S3.Encryption.EncryptionType != "" {
-			meta[xhttp.AmzServerSideEncryption] = xhttp.AmzEncryptionAES
-		}
-		return ObjectOptions{
-			Versioned:        globalBucketVersioningSys.PrefixEnabled(bucket, object),
-			VersionSuspended: globalBucketVersioningSys.PrefixSuspended(bucket, object),
-			UserDefined:      meta,
-		}
-	}
+	meta[strings.ToLower(xhttp.AmzStorageClass)] = objInfo.StorageClass
 	maps.Copy(meta, objInfo.UserDefined)
 	if len(objInfo.UserTags) != 0 {
 		meta[xhttp.AmzObjectTagging] = objInfo.UserTags

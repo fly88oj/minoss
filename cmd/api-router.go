@@ -352,10 +352,6 @@ func registerAPIRouter(router *mux.Router) {
 		router.Methods(http.MethodDelete).Path("/{object:.+}").
 			HandlerFunc(s3APIMiddleware(api.DeleteObjectTaggingHandler, traceHdrsS3HFlag)).
 			Queries("tagging", "")
-		// SelectObjectContent
-		router.Methods(http.MethodPost).Path("/{object:.+}").
-			HandlerFunc(s3APIMiddleware(api.SelectObjectContentHandler, traceHdrsS3HFlag)).
-			Queries("select", "").Queries("select-type", "2")
 		// GetObjectRetention
 		router.Methods(http.MethodGet).Path("/{object:.+}").
 			HandlerFunc(s3APIMiddleware(api.GetObjectRetentionHandler)).

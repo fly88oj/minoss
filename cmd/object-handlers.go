@@ -27,7 +27,6 @@ import (
 	"io"
 	"maps"
 	"net/http"
-	"net/http/httptest"
 	"net/textproto"
 	"net/url"
 	"os"
@@ -60,7 +59,6 @@ import (
 	xioutil "github.com/minio/minio/internal/ioutil"
 	"github.com/minio/minio/internal/kms"
 	"github.com/minio/minio/internal/logger"
-	"github.com/minio/minio/internal/s3select"
 	"github.com/minio/mux"
 	"github.com/minio/pkg/v3/policy"
 )
@@ -95,219 +93,6 @@ func setHeadGetRespHeaders(w http.ResponseWriter, reqParams url.Values) {
 			w.Header()[header] = []string{strings.Join(v, ",")}
 		}
 	}
-}
-
-// SelectObjectContentHandler - GET Object?select
-// ----------
-// This implementation of the GET operation retrieves object content based
-// on an SQL expression. In the request, along with the sql expression, you must
-// also specify a data serialization format (JSON, CSV) of the object.
-func (api objectAPIHandlers) SelectObjectContentHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := newContext(r, w, "SelectObject")
-
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
-
-	// Fetch object stat info.
-	objectAPI := api.ObjectAPI()
-	if objectAPI == nil {
-		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrServerNotInitialized), r.URL)
-		return
-	}
-
-	if crypto.S3.IsRequested(r.Header) || crypto.S3KMS.IsRequested(r.Header) { // If SSE-S3 or SSE-KMS present -> AWS fails with undefined error
-		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrBadRequest), r.URL)
-		return
-	}
-
-	vars := mux.Vars(r)
-	bucket := vars["bucket"]
-	object, err := unescapePath(vars["object"])
-	if err != nil {
-		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-		return
-	}
-
-	opts, err := getOpts(ctx, r, bucket, object)
-	if err != nil {
-		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-		return
-	}
-
-	getObjectInfo := objectAPI.GetObjectInfo
-
-	// Check for auth type to return S3 compatible error.
-	// type to return the correct error (NoSuchKey vs AccessDenied)
-	if s3Error := checkRequestAuthType(ctx, r, policy.GetObjectAction, bucket, object); s3Error != ErrNone {
-		if getRequestAuthType(r) == authTypeAnonymous {
-			// As per "Permission" section in
-			// https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectGET.html
-			// If the object you request does not exist,
-			// the error Amazon S3 returns depends on
-			// whether you also have the s3:ListBucket
-			// permission.
-			// * If you have the s3:ListBucket permission
-			//   on the bucket, Amazon S3 will return an
-			//   HTTP status code 404 ("no such key")
-			//   error.
-			// * if you don’t have the s3:ListBucket
-			//   permission, Amazon S3 will return an HTTP
-			//   status code 403 ("access denied") error.`
-			if globalPolicySys.IsAllowed(policy.BucketPolicyArgs{
-				Action:          policy.ListBucketAction,
-				BucketName:      bucket,
-				ConditionValues: getConditionValues(r, "", auth.AnonymousCredentials),
-				IsOwner:         false,
-			}) {
-				_, err = getObjectInfo(ctx, bucket, object, opts)
-				if toAPIError(ctx, err).Code == "NoSuchKey" {
-					s3Error = ErrNoSuchKey
-				}
-			}
-		}
-		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Error), r.URL)
-		return
-	}
-
-	// Get request range.
-	rangeHeader := r.Header.Get(xhttp.Range)
-	if rangeHeader != "" {
-		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrUnsupportedRangeHeader), r.URL)
-		return
-	}
-
-	if r.ContentLength <= 0 {
-		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrEmptyRequestBody), r.URL)
-		return
-	}
-
-	// Take read lock on object, here so subsequent lower-level
-	// calls do not need to.
-	lock := objectAPI.NewNSLock(bucket, object)
-	lkctx, err := lock.GetRLock(ctx, globalOperationTimeout)
-	if err != nil {
-		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-		return
-	}
-	ctx = lkctx.Context()
-	defer lock.RUnlock(lkctx)
-
-	getObjectNInfo := objectAPI.GetObjectNInfo
-
-	gopts := opts
-	gopts.NoLock = true // We already have a lock, we can live with it.
-	objInfo, err := getObjectInfo(ctx, bucket, object, gopts)
-	if err != nil {
-		// Versioning enabled quite possibly object is deleted might be delete-marker
-		// if present set the headers, no idea why AWS S3 sets these headers.
-		if objInfo.VersionID != "" && objInfo.DeleteMarker {
-			w.Header()[xhttp.AmzVersionID] = []string{objInfo.VersionID}
-			w.Header()[xhttp.AmzDeleteMarker] = []string{strconv.FormatBool(objInfo.DeleteMarker)}
-		}
-		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-		return
-	}
-
-	// filter object lock metadata if permission does not permit
-	getRetPerms := checkRequestAuthType(ctx, r, policy.GetObjectRetentionAction, bucket, object)
-	legalHoldPerms := checkRequestAuthType(ctx, r, policy.GetObjectLegalHoldAction, bucket, object)
-
-	// filter object lock metadata if permission does not permit
-	objInfo.UserDefined = objectlock.FilterObjectLockMetadata(objInfo.UserDefined, getRetPerms != ErrNone, legalHoldPerms != ErrNone)
-
-	if _, err = DecryptObjectInfo(&objInfo, r); err != nil {
-		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-		return
-	}
-
-	actualSize, err := objInfo.GetActualSize()
-	if err != nil {
-		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-		return
-	}
-
-	objectRSC := s3select.NewObjectReadSeekCloser(
-		func(offset int64) (io.ReadCloser, error) {
-			rs := &HTTPRangeSpec{
-				IsSuffixLength: false,
-				Start:          offset,
-				End:            -1,
-			}
-			opts.NoLock = true
-			return getObjectNInfo(ctx, bucket, object, rs, r.Header, opts)
-		},
-		actualSize,
-	)
-	defer objectRSC.Close()
-	s3Select, err := s3select.NewS3Select(r.Body)
-	if err != nil {
-		if serr, ok := err.(s3select.SelectError); ok {
-			encodedErrorResponse := encodeResponse(APIErrorResponse{
-				Code:       serr.ErrorCode(),
-				Message:    serr.ErrorMessage(),
-				BucketName: bucket,
-				Key:        object,
-				Resource:   r.URL.Path,
-				RequestID:  w.Header().Get(xhttp.AmzRequestID),
-				HostID:     globalDeploymentID(),
-			})
-			writeResponse(w, serr.HTTPStatusCode(), encodedErrorResponse, mimeXML)
-		} else {
-			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-		}
-		return
-	}
-	defer s3Select.Close()
-
-	if err = s3Select.Open(objectRSC); err != nil {
-		if serr, ok := err.(s3select.SelectError); ok {
-			encodedErrorResponse := encodeResponse(APIErrorResponse{
-				Code:       serr.ErrorCode(),
-				Message:    serr.ErrorMessage(),
-				BucketName: bucket,
-				Key:        object,
-				Resource:   r.URL.Path,
-				RequestID:  w.Header().Get(xhttp.AmzRequestID),
-				HostID:     globalDeploymentID(),
-			})
-			writeResponse(w, serr.HTTPStatusCode(), encodedErrorResponse, mimeXML)
-		} else {
-			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-		}
-		return
-	}
-
-	// Set encryption response headers
-	switch kind, _ := crypto.IsEncrypted(objInfo.UserDefined); kind {
-	case crypto.S3:
-		w.Header().Set(xhttp.AmzServerSideEncryption, xhttp.AmzEncryptionAES)
-	case crypto.S3KMS:
-		w.Header().Set(xhttp.AmzServerSideEncryption, xhttp.AmzEncryptionKMS)
-		w.Header().Set(xhttp.AmzServerSideEncryptionKmsID, objInfo.KMSKeyID())
-		if kmsCtx, ok := objInfo.UserDefined[crypto.MetaContext]; ok {
-			w.Header().Set(xhttp.AmzServerSideEncryptionKmsContext, kmsCtx)
-		}
-	case crypto.SSEC:
-		// Validate the SSE-C Key set in the header.
-		if _, err = crypto.SSEC.UnsealObjectKey(r.Header, objInfo.UserDefined, bucket, object); err != nil {
-			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-			return
-		}
-		w.Header().Set(xhttp.AmzServerSideEncryptionCustomerAlgorithm, r.Header.Get(xhttp.AmzServerSideEncryptionCustomerAlgorithm))
-		w.Header().Set(xhttp.AmzServerSideEncryptionCustomerKeyMD5, r.Header.Get(xhttp.AmzServerSideEncryptionCustomerKeyMD5))
-	}
-
-	s3Select.Evaluate(w)
-
-	// Notify object accessed via a GET request.
-	sendEvent(eventArgs{
-		EventName:    event.ObjectAccessedGet,
-		BucketName:   bucket,
-		Object:       objInfo,
-		ReqParams:    extractReqParams(r),
-		RespElements: extractRespElements(w),
-		UserAgent:    r.UserAgent(),
-		Host:         handlers.GetSourceIP(r),
-	})
 }
 
 func (api objectAPIHandlers) getObjectHandler(ctx context.Context, objectAPI ObjectLayer, bucket, object string, w http.ResponseWriter, r *http.Request) {
@@ -3498,10 +3283,6 @@ func (api objectAPIHandlers) PostRestoreObjectHandler(w http.ResponseWriter, r *
 		}
 	}
 
-	restoreObject := mustGetUUID()
-	if rreq.OutputLocation.S3.BucketName != "" {
-		w.Header()[xhttp.AmzRestoreOutputPath] = []string{pathJoin(rreq.OutputLocation.S3.BucketName, rreq.OutputLocation.S3.Prefix, restoreObject)}
-	}
 	w.WriteHeader(statusCode)
 	// Notify object restore started via a POST request.
 	sendEvent(eventArgs{
@@ -3515,51 +3296,6 @@ func (api objectAPIHandlers) PostRestoreObjectHandler(w http.ResponseWriter, r *
 	// now process the restore in background
 	go func() {
 		rctx := GlobalContext
-		if !rreq.SelectParameters.IsEmpty() {
-			actualSize, err := objInfo.GetActualSize()
-			if err != nil {
-				writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-				return
-			}
-
-			objectRSC := s3select.NewObjectReadSeekCloser(
-				func(offset int64) (io.ReadCloser, error) {
-					rs := &HTTPRangeSpec{
-						IsSuffixLength: false,
-						Start:          offset,
-						End:            -1,
-					}
-					return getTransitionedObjectReader(rctx, bucket, object, rs, r.Header,
-						objInfo, ObjectOptions{VersionID: objInfo.VersionID})
-				},
-				actualSize,
-			)
-			defer objectRSC.Close()
-			if err = rreq.SelectParameters.Open(objectRSC); err != nil {
-				if serr, ok := err.(s3select.SelectError); ok {
-					encodedErrorResponse := encodeResponse(APIErrorResponse{
-						Code:       serr.ErrorCode(),
-						Message:    serr.ErrorMessage(),
-						BucketName: bucket,
-						Key:        object,
-						Resource:   r.URL.Path,
-						RequestID:  w.Header().Get(xhttp.AmzRequestID),
-						HostID:     globalDeploymentID(),
-					})
-					writeResponse(w, serr.HTTPStatusCode(), encodedErrorResponse, mimeXML)
-				} else {
-					writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-				}
-				return
-			}
-			nr := httptest.NewRecorder()
-			rw := xhttp.NewResponseRecorder(nr)
-			rw.LogErrBody = true
-			rw.LogAllBody = true
-			rreq.SelectParameters.Evaluate(rw)
-			rreq.SelectParameters.Close()
-			return
-		}
 		opts := ObjectOptions{
 			Transition: TransitionOptions{
 				RestoreRequest: rreq,

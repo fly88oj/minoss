@@ -17,7 +17,6 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.9.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.1
 	github.com/IBM/sarama v1.45.1
-	github.com/alecthomas/participle v0.7.1
 	github.com/beevik/ntp v1.4.3
 	github.com/buger/jsonparser v1.1.1
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -30,7 +29,6 @@ require (
 	github.com/elastic/go-elasticsearch/v7 v7.17.10
 	github.com/fatih/color v1.18.0
 	github.com/felixge/fgprof v0.9.5
-	github.com/fraugster/parquet-go v0.12.0
 	github.com/go-ldap/ldap/v3 v3.4.11
 	github.com/go-openapi/loads v0.22.0
 	github.com/go-sql-driver/mysql v1.9.2
@@ -51,7 +49,6 @@ require (
 	github.com/miekg/dns v1.1.65
 	github.com/minio/cli v1.24.2
 	github.com/minio/console v1.7.7-0.20250905210349-2017f33b26e1
-	github.com/minio/csvparser v1.0.0
 	github.com/minio/dnscache v0.1.1
 	github.com/minio/dperf v0.6.3
 	github.com/minio/highwayhash v1.0.3
@@ -61,7 +58,6 @@ require (
 	github.com/minio/minio-go/v7 v7.0.91
 	github.com/minio/mux v1.9.2
 	github.com/minio/pkg/v3 v3.1.3
-	github.com/minio/simdjson-go v0.4.5
 	github.com/minio/sio v0.4.1
 	github.com/minio/xxml v0.0.3
 	github.com/minio/zipindex v0.4.0
@@ -125,7 +121,6 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.51.0 // indirect
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
-	github.com/apache/thrift v0.21.0 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
