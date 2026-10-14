@@ -40,3 +40,18 @@ jobs:
           sudo sysctl net.ipv6.conf.default.disable_ipv6=0
           make verify
           make test-timeout
+
+  # The helpers under docs/debugging are their own Go modules, so every root
+  # `./...` command the build job runs skips them silently. The Makefile target
+  # is the single source of truth for what "checked" means there.
+  submodules:
+    name: docs/debugging submodules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.x
+          check-latest: true
+      - name: Vet, build and test the standalone modules
+        run: make submodules
