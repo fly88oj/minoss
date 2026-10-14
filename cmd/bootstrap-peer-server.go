@@ -132,7 +132,7 @@ func getServerSystemCfg() *ServerSystemConfig {
 		}
 		envValues[envK] = logger.HashString(env.Get(envK, ""))
 	}
-	scfg := &ServerSystemConfig{NEndpoints: globalEndpoints.NEndpoints(), MinioEnv: envValues, Checksum: binaryChecksum}
+	scfg := &ServerSystemConfig{NEndpoints: globalEndpoints.NEndpoints(), MinioEnv: envValues, Checksum: binaryChecksum()}
 	var cmdLines []string
 	for _, ep := range globalEndpoints {
 		cmdLines = append(cmdLines, ep.CmdLine)
@@ -179,7 +179,10 @@ func (client *bootstrapRESTClient) String() string {
 	return client.gridConn.String()
 }
 
-var binaryChecksum = getBinaryChecksum()
+// binaryChecksum is computed lazily: only distributed-erasure setups
+// compare it across peers (verifyServerSystemConfig), and hashing the
+// full binary at package init added ~150ms to every server start.
+var binaryChecksum = sync.OnceValue(getBinaryChecksum)
 
 func getBinaryChecksum() string {
 	mw := md5.New()
