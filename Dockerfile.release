@@ -7,10 +7,17 @@ ENV CGO_ENABLED=0
 
 WORKDIR /build
 
+# Cache dependencies and build inputs across image builds.
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
 COPY . .
 
 # Build minio from source (self-reliant release image, no dl.min.io).
-RUN go build -tags kqueue -trimpath -o /go/bin/minio && \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -trimpath -ldflags "-s -w" -o /go/bin/minio && \
     go install github.com/minio/mc@RELEASE.2025-08-13T08-35-41Z
 
 # A static curl is needed by the health/liveness probes.

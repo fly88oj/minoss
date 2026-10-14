@@ -35,8 +35,9 @@ func genLDFlags(version string) string {
 	ldflagsStr += " -X github.com/minio/minio/cmd.Version=" + version
 	ldflagsStr += " -X github.com/minio/minio/cmd.CopyrightYear=" + copyrightYear
 	ldflagsStr += " -X github.com/minio/minio/cmd.ReleaseTag=" + releaseTag
-	ldflagsStr += " -X github.com/minio/minio/cmd.CommitID=" + commitID()
-	ldflagsStr += " -X github.com/minio/minio/cmd.ShortCommitID=" + commitID()[:12]
+	commit := commitID()
+	ldflagsStr += " -X github.com/minio/minio/cmd.CommitID=" + commit
+	ldflagsStr += " -X github.com/minio/minio/cmd.ShortCommitID=" + commit[:12]
 	ldflagsStr += " -X github.com/minio/minio/cmd.GOPATH=" + os.Getenv("GOPATH")
 	ldflagsStr += " -X github.com/minio/minio/cmd.GOROOT=" + os.Getenv("GOROOT")
 	return ldflagsStr

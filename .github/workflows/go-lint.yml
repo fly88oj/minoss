@@ -38,7 +38,7 @@ jobs:
           sudo sysctl net.ipv6.conf.all.disable_ipv6=0
           sudo sysctl net.ipv6.conf.default.disable_ipv6=0
           make
-          make test
+          make test TEST_FLAGS=-count=1
           make test-race
 
   no-new-globals:

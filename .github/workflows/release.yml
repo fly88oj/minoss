@@ -63,7 +63,7 @@ jobs:
           LDFLAGS="$(MINIO_RELEASE=RELEASE go run buildscripts/gen-ldflags.go "$VTIME")"
           ext=""
           if [ "${{ matrix.os }}" = "windows" ]; then ext=".exe"; fi
-          go build -tags kqueue -trimpath --ldflags "${LDFLAGS}" -o "minio-${{ matrix.os }}-${{ matrix.arch }}${ext}"
+          go build -trimpath --ldflags "${LDFLAGS}" -o "minio-${{ matrix.os }}-${{ matrix.arch }}${ext}"
           sha256sum "minio-${{ matrix.os }}-${{ matrix.arch }}${ext}" > "minio-${{ matrix.os }}-${{ matrix.arch }}${ext}.sha256sum"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
