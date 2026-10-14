@@ -37,8 +37,10 @@ type LookupHost func(ctx context.Context, host string) (addrs []string, err erro
 //
 // You can use returned dial function for `http.Transport.DialContext`.
 //
-// In this function, it uses functions from `rand` package. To make it really random,
-// you MUST call `rand.Seed` and change the value from the default in your application
+// This function uses the `rand` package for address selection. The global
+// generator is randomly seeded by the runtime since go1.20 (and `rand.Seed`
+// has been a no-op since go1.24), so callers do not need to - and cannot -
+// seed it.
 func DialContextWithLookupHost(lookupHost LookupHost, baseDialCtx DialContext) DialContext {
 	if lookupHost == nil {
 		lookupHost = net.DefaultResolver.LookupHost

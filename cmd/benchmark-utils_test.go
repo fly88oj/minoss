@@ -179,7 +179,8 @@ func benchmarkPutObjectParallel(b *testing.B, instanceType string, objSize int) 
 func getRandomByte() []byte {
 	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	// seeding the random number generator.
-	rand.Seed(UTCNow().UnixNano())
+	// The global generator is randomly seeded by the runtime (rand.Seed has been
+	// a no-op since go1.24), so benchmarks vary by construction.
 	// pick a character randomly.
 	return []byte{letterBytes[rand.Intn(len(letterBytes))]}
 }

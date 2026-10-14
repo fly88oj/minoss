@@ -130,7 +130,7 @@ func TestGetURLScheme(t *testing.T) {
 func TestTrackingResponseWriter(t *testing.T) {
 	rw := httptest.NewRecorder()
 	trw := &trackingResponseWriter{ResponseWriter: rw}
-	trw.WriteHeader(123)
+	trw.WriteHeader(http.StatusAccepted)
 	if !trw.headerWritten {
 		t.Fatal("headerWritten was not set by WriteHeader call")
 	}
@@ -142,7 +142,7 @@ func TestTrackingResponseWriter(t *testing.T) {
 
 	// Check that WriteHeader and Write were called on the underlying response writer
 	resp := rw.Result()
-	if resp.StatusCode != 123 {
+	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("unexpected status: %v", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
@@ -156,6 +156,20 @@ func TestTrackingResponseWriter(t *testing.T) {
 	// Check that Unwrap works
 	if trw.Unwrap() != rw {
 		t.Fatalf("Unwrap returned wrong result: %v", trw.Unwrap())
+	}
+
+	// An informational (1xx) response carries no body, and net/http rejects a
+	// write after it (httptest.ResponseRecorder started enforcing that here).
+	// Nothing in the server writes a 1xx status; this case exists so the
+	// tracker's own behavior stays pinned if that ever changes.
+	infoRW := httptest.NewRecorder()
+	info := &trackingResponseWriter{ResponseWriter: infoRW}
+	info.WriteHeader(123)
+	if !info.headerWritten {
+		t.Fatal("headerWritten was not set by an informational WriteHeader call")
+	}
+	if _, err := info.Write([]byte("hello")); err == nil {
+		t.Fatal("expected writing a body after an informational status to fail")
 	}
 }
 

@@ -23,7 +23,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -2246,8 +2245,6 @@ func (s *TestSuiteCommon) TestGetPartialObjectMisAligned(c *check) {
 	var buffer bytes.Buffer
 	// data to be written into buffer.
 	data := "1234567890"
-	// seed the random number generator once.
-	rand.Seed(3)
 	// generate a random number between 13 and 200.
 	randInt := getRandomRange(13, 200, -1)
 	// write into buffer till length of the buffer is greater than the generated random number.

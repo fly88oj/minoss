@@ -2254,14 +2254,17 @@ func getRandomRange(minN, maxN int, seed int64) int {
 // Randomizes the order of bytes in the byte array
 // using Knuth Fisher-Yates shuffle algorithm.
 func randomizeBytes(s []byte, seed int64) []byte {
-	// special value -1 means no explicit seeding.
+	// Special value -1 means "no explicit seeding". rand.Seed is a no-op since
+	// go1.24, so build the source here: the shuffle is reproducible when a seed
+	// is given, and never draws from (or disturbs) the global generator.
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	if seed != -1 {
-		rand.Seed(seed)
+		rng = rand.New(rand.NewSource(seed))
 	}
 	n := len(s)
 	var j int
 	for i := 0; i < n-1; i++ {
-		j = i + rand.Intn(n-i)
+		j = i + rng.Intn(n-i)
 		s[i], s[j] = s[j], s[i]
 	}
 	return s
