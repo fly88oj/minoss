@@ -28,3 +28,19 @@ jobs:
         run: |
           cd helm/minio
           helm lint .
+          # Default values create no monitoring objects at all, so linting them
+          # proves nothing about the scrape config. Render it and assert the
+          # removed metrics v2 endpoints can never come back.
+          helm lint . --set metrics.serviceMonitor.enabled=true \
+            --set metrics.serviceMonitor.includeNode=true \
+            --set metrics.serviceMonitor.public=false \
+            --set metrics.serviceMonitor.bearerTokenSecret=ci-token \
+            --set tls.enabled=true --set tls.certSecret=ci-tls
+          rendered=$(helm template ci . \
+            --set metrics.serviceMonitor.enabled=true \
+            --set metrics.serviceMonitor.includeNode=true)
+          echo "$rendered" | grep -q 'monitoring.coreos.com/v1'
+          if echo "$rendered" | grep -q '/minio/v2/metrics'; then
+            echo "metrics v2 scrape paths are gone from this build; use /minio/metrics/v3/<collector>"
+            exit 1
+          fi
