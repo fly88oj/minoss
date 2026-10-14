@@ -63,9 +63,8 @@ import (
 
 // serverDebugLog will enable debug printing
 var (
-	serverDebugLog     = env.Get("_MINIO_SERVER_DEBUG", config.EnableOff) == config.EnableOn
-	currentReleaseTime time.Time
-	orchestrated       = IsKubernetes() || IsDocker()
+	serverDebugLog = env.Get("_MINIO_SERVER_DEBUG", config.EnableOff) == config.EnableOn
+	orchestrated   = IsKubernetes() || IsDocker()
 )
 
 func init() {
@@ -98,8 +97,6 @@ func init() {
 	// another way to look at this is we are turning off retries.
 	minio.MaxRetry = 1
 	madmin.MaxRetry = 1
-
-	currentReleaseTime, _ = GetCurrentReleaseTime()
 }
 
 const consolePrefix = "CONSOLE_"
@@ -688,7 +685,6 @@ func serverHandleEnvVars() {
 		}
 		u.Path = "" // remove any path component such as `/`
 		globalMinioEndpoint = u.String()
-		globalMinioEndpointURL = u
 	}
 
 	globalFSOSync, err = config.ParseBool(env.Get(config.EnvFSOSync, config.EnableOff))

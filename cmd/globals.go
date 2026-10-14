@@ -216,8 +216,7 @@ var (
 	globalMinioConsoleHost = ""
 
 	// Holds the possible host endpoint.
-	globalMinioEndpoint    = ""
-	globalMinioEndpointURL *xnet.URL
+	globalMinioEndpoint = ""
 
 	globalNotificationSys *NotificationSys
 

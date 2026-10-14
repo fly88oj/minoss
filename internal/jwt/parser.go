@@ -358,12 +358,12 @@ func ParseUnverifiedStandardClaims(token []byte, claims *StandardClaims, buf []b
 	}
 
 	for _, signer := range hmacSigners {
-		if string(alg) == signer.Name {
+		if alg == signer.Name {
 			return signer, nil
 		}
 	}
 
-	return nil, jwtgo.NewValidationError(fmt.Sprintf("signing method (%s) is unavailable.", string(alg)),
+	return nil, jwtgo.NewValidationError(fmt.Sprintf("signing method (%s) is unavailable.", alg),
 		jwtgo.ValidationErrorUnverifiable)
 }
 
@@ -474,11 +474,11 @@ func ParseUnverifiedMapClaims(token []byte, claims *MapClaims, buf []byte) (*Sig
 	}
 
 	for _, signer := range hmacSigners {
-		if string(alg) == signer.Name {
+		if alg == signer.Name {
 			return signer, nil
 		}
 	}
 
-	return nil, jwtgo.NewValidationError(fmt.Sprintf("signing method (%s) is unavailable.", string(alg)),
+	return nil, jwtgo.NewValidationError(fmt.Sprintf("signing method (%s) is unavailable.", alg),
 		jwtgo.ValidationErrorUnverifiable)
 }
