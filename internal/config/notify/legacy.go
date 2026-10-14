@@ -379,50 +379,6 @@ func SetNotifyPostgres(s config.Config, psqName string, cfg target.PostgreSQLArg
 	return nil
 }
 
-// SetNotifyNSQ - helper for config migration from older config.
-func SetNotifyNSQ(s config.Config, nsqName string, cfg target.NSQArgs) error {
-	if !cfg.Enable {
-		return nil
-	}
-
-	if err := cfg.Validate(); err != nil {
-		return err
-	}
-
-	s[config.NotifyNSQSubSys][nsqName] = config.KVS{
-		config.KV{
-			Key:   config.Enable,
-			Value: config.EnableOn,
-		},
-		config.KV{
-			Key:   target.NSQAddress,
-			Value: cfg.NSQDAddress.String(),
-		},
-		config.KV{
-			Key:   target.NSQTopic,
-			Value: cfg.Topic,
-		},
-		config.KV{
-			Key:   target.NSQTLS,
-			Value: config.FormatBool(cfg.TLS.Enable),
-		},
-		config.KV{
-			Key:   target.NSQTLSSkipVerify,
-			Value: config.FormatBool(cfg.TLS.SkipVerify),
-		},
-		config.KV{
-			Key:   target.NSQQueueDir,
-			Value: cfg.QueueDir,
-		},
-		config.KV{
-			Key:   target.NSQQueueLimit,
-			Value: strconv.Itoa(int(cfg.QueueLimit)),
-		},
-	}
-
-	return nil
-}
-
 // SetNotifyNATS - helper for config migration from older config.
 func SetNotifyNATS(s config.Config, natsName string, cfg target.NATSArgs) error {
 	if !cfg.Enable {
@@ -501,27 +457,6 @@ func SetNotifyNATS(s config.Config, natsName string, cfg target.NATSArgs) error 
 		config.KV{
 			Key:   target.NATSQueueLimit,
 			Value: strconv.Itoa(int(cfg.QueueLimit)),
-		},
-		config.KV{
-			Key: target.NATSStreaming,
-			Value: func() string {
-				if cfg.Streaming.Enable {
-					return config.EnableOn
-				}
-				return config.EnableOff
-			}(),
-		},
-		config.KV{
-			Key:   target.NATSStreamingClusterID,
-			Value: cfg.Streaming.ClusterID,
-		},
-		config.KV{
-			Key:   target.NATSStreamingAsync,
-			Value: config.FormatBool(cfg.Streaming.Async),
-		},
-		config.KV{
-			Key:   target.NATSStreamingMaxPubAcksInFlight,
-			Value: strconv.Itoa(cfg.Streaming.MaxPubAcksInflight),
 		},
 	}
 

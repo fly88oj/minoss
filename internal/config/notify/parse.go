@@ -190,21 +190,6 @@ func fetchSubSysTargets(ctx context.Context, cfg config.Config, subSys string, t
 			}
 			targets = append(targets, t)
 		}
-	case config.NotifyNSQSubSys:
-		nsqTargets, err := GetNotifyNSQ(cfg[config.NotifyNSQSubSys])
-		if err != nil {
-			return nil, err
-		}
-		for id, args := range nsqTargets {
-			if !args.Enable {
-				continue
-			}
-			t, err := target.NewNSQTarget(id, args, logOnceIf)
-			if err != nil {
-				return nil, err
-			}
-			targets = append(targets, t)
-		}
 	case config.NotifyPostgresSubSys:
 		postgresTargets, err := GetNotifyPostgres(cfg[config.NotifyPostgresSubSys])
 		if err != nil {
@@ -279,7 +264,6 @@ var (
 		config.NotifyMQTTSubSys:     DefaultMQTTKVS,
 		config.NotifyMySQLSubSys:    DefaultMySQLKVS,
 		config.NotifyNATSSubSys:     DefaultNATSKVS,
-		config.NotifyNSQSubSys:      DefaultNSQKVS,
 		config.NotifyPostgresSubSys: DefaultPostgresKVS,
 		config.NotifyRedisSubSys:    DefaultRedisKVS,
 		config.NotifyWebhookSubSys:  DefaultWebhookKVS,
@@ -873,26 +857,6 @@ var (
 			Value: config.EnableOff,
 		},
 		config.KV{
-			Key:           target.NATSStreaming,
-			Value:         config.EnableOff,
-			HiddenIfEmpty: true,
-		},
-		config.KV{
-			Key:           target.NATSStreamingAsync,
-			Value:         config.EnableOff,
-			HiddenIfEmpty: true,
-		},
-		config.KV{
-			Key:           target.NATSStreamingMaxPubAcksInFlight,
-			Value:         "0",
-			HiddenIfEmpty: true,
-		},
-		config.KV{
-			Key:           target.NATSStreamingClusterID,
-			Value:         "",
-			HiddenIfEmpty: true,
-		},
-		config.KV{
 			Key:   target.NATSQueueDir,
 			Value: "",
 		},
@@ -1042,36 +1006,6 @@ func GetNotifyNATS(natsKVS map[string]config.KVS, rootCAs *x509.CertPool) (map[s
 		}
 		natsArgs.JetStream.Enable = env.Get(jetStreamEnableEnv, kv.Get(target.NATSJetStream)) == config.EnableOn
 
-		streamingEnableEnv := target.EnvNATSStreaming
-		if k != config.Default {
-			streamingEnableEnv = streamingEnableEnv + config.Default + k
-		}
-
-		streamingEnabled := env.Get(streamingEnableEnv, kv.Get(target.NATSStreaming)) == config.EnableOn
-		if streamingEnabled {
-			asyncEnv := target.EnvNATSStreamingAsync
-			if k != config.Default {
-				asyncEnv = asyncEnv + config.Default + k
-			}
-			maxPubAcksInflightEnv := target.EnvNATSStreamingMaxPubAcksInFlight
-			if k != config.Default {
-				maxPubAcksInflightEnv = maxPubAcksInflightEnv + config.Default + k
-			}
-			maxPubAcksInflight, err := strconv.Atoi(env.Get(maxPubAcksInflightEnv,
-				kv.Get(target.NATSStreamingMaxPubAcksInFlight)))
-			if err != nil {
-				return nil, err
-			}
-			clusterIDEnv := target.EnvNATSStreamingClusterID
-			if k != config.Default {
-				clusterIDEnv = clusterIDEnv + config.Default + k
-			}
-			natsArgs.Streaming.Enable = streamingEnabled
-			natsArgs.Streaming.ClusterID = env.Get(clusterIDEnv, kv.Get(target.NATSStreamingClusterID))
-			natsArgs.Streaming.Async = env.Get(asyncEnv, kv.Get(target.NATSStreamingAsync)) == config.EnableOn
-			natsArgs.Streaming.MaxPubAcksInflight = maxPubAcksInflight
-		}
-
 		if err = natsArgs.Validate(); err != nil {
 			return nil, err
 		}
@@ -1079,111 +1013,6 @@ func GetNotifyNATS(natsKVS map[string]config.KVS, rootCAs *x509.CertPool) (map[s
 		natsTargets[k] = natsArgs
 	}
 	return natsTargets, nil
-}
-
-// DefaultNSQKVS - NSQ KV for config
-var (
-	DefaultNSQKVS = config.KVS{
-		config.KV{
-			Key:   config.Enable,
-			Value: config.EnableOff,
-		},
-		config.KV{
-			Key:   target.NSQAddress,
-			Value: "",
-		},
-		config.KV{
-			Key:   target.NSQTopic,
-			Value: "",
-		},
-		config.KV{
-			Key:   target.NSQTLS,
-			Value: config.EnableOff,
-		},
-		config.KV{
-			Key:   target.NSQTLSSkipVerify,
-			Value: config.EnableOff,
-		},
-		config.KV{
-			Key:   target.NSQQueueDir,
-			Value: "",
-		},
-		config.KV{
-			Key:   target.NSQQueueLimit,
-			Value: "0",
-		},
-	}
-)
-
-// GetNotifyNSQ - returns a map of registered notification 'nsq' targets
-func GetNotifyNSQ(nsqKVS map[string]config.KVS) (map[string]target.NSQArgs, error) {
-	nsqTargets := make(map[string]target.NSQArgs)
-	for k, kv := range config.Merge(nsqKVS, target.EnvNSQEnable, DefaultNSQKVS) {
-		enableEnv := target.EnvNSQEnable
-		if k != config.Default {
-			enableEnv = enableEnv + config.Default + k
-		}
-
-		enabled, err := config.ParseBool(env.Get(enableEnv, kv.Get(config.Enable)))
-		if err != nil {
-			return nil, err
-		}
-		if !enabled {
-			continue
-		}
-
-		addressEnv := target.EnvNSQAddress
-		if k != config.Default {
-			addressEnv = addressEnv + config.Default + k
-		}
-		nsqdAddress, err := xnet.ParseHost(env.Get(addressEnv, kv.Get(target.NSQAddress)))
-		if err != nil {
-			return nil, err
-		}
-		tlsEnableEnv := target.EnvNSQTLS
-		if k != config.Default {
-			tlsEnableEnv = tlsEnableEnv + config.Default + k
-		}
-		tlsSkipVerifyEnv := target.EnvNSQTLSSkipVerify
-		if k != config.Default {
-			tlsSkipVerifyEnv = tlsSkipVerifyEnv + config.Default + k
-		}
-
-		queueLimitEnv := target.EnvNSQQueueLimit
-		if k != config.Default {
-			queueLimitEnv = queueLimitEnv + config.Default + k
-		}
-		queueLimit, err := strconv.ParseUint(env.Get(queueLimitEnv, kv.Get(target.NSQQueueLimit)), 10, 64)
-		if err != nil {
-			return nil, err
-		}
-
-		topicEnv := target.EnvNSQTopic
-		if k != config.Default {
-			topicEnv = topicEnv + config.Default + k
-		}
-		queueDirEnv := target.EnvNSQQueueDir
-		if k != config.Default {
-			queueDirEnv = queueDirEnv + config.Default + k
-		}
-
-		nsqArgs := target.NSQArgs{
-			Enable:      enabled,
-			NSQDAddress: *nsqdAddress,
-			Topic:       env.Get(topicEnv, kv.Get(target.NSQTopic)),
-			QueueDir:    env.Get(queueDirEnv, kv.Get(target.NSQQueueDir)),
-			QueueLimit:  queueLimit,
-		}
-		nsqArgs.TLS.Enable = env.Get(tlsEnableEnv, kv.Get(target.NSQTLS)) == config.EnableOn
-		nsqArgs.TLS.SkipVerify = env.Get(tlsSkipVerifyEnv, kv.Get(target.NSQTLSSkipVerify)) == config.EnableOn
-
-		if err = nsqArgs.Validate(); err != nil {
-			return nil, err
-		}
-
-		nsqTargets[k] = nsqArgs
-	}
-	return nsqTargets, nil
 }
 
 // DefaultPostgresKVS - default Postgres KV for server config.

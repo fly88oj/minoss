@@ -31,7 +31,6 @@ import (
 	"github.com/minio/minio/internal/config/notify"
 	"github.com/minio/minio/internal/config/policy/opa"
 	"github.com/minio/minio/internal/config/storageclass"
-	"github.com/minio/minio/internal/event/target"
 	"github.com/minio/minio/internal/logger"
 	xnet "github.com/minio/pkg/v3/net"
 	"github.com/minio/pkg/v3/quick"
@@ -131,8 +130,6 @@ func readConfigWithoutMigrate(ctx context.Context, objAPI ObjectLayer) (config.C
 		}
 	case "31":
 		// V31 -> V32
-		cfg.Notify.NSQ = make(map[string]target.NSQArgs)
-		cfg.Notify.NSQ["1"] = target.NSQArgs{}
 	}
 
 	// Move to latest.
@@ -171,9 +168,6 @@ func readConfigWithoutMigrate(ctx context.Context, objAPI ObjectLayer) (config.C
 	}
 	for k, args := range cfg.Notify.NATS {
 		notify.SetNotifyNATS(newCfg, k, args)
-	}
-	for k, args := range cfg.Notify.NSQ {
-		notify.SetNotifyNSQ(newCfg, k, args)
 	}
 	for k, args := range cfg.Notify.PostgreSQL {
 		notify.SetNotifyPostgres(newCfg, k, args)

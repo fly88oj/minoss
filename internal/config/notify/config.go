@@ -30,7 +30,6 @@ type Config struct {
 	MQTT          map[string]target.MQTTArgs          `json:"mqtt"`
 	MySQL         map[string]target.MySQLArgs         `json:"mysql"`
 	NATS          map[string]target.NATSArgs          `json:"nats"`
-	NSQ           map[string]target.NSQArgs           `json:"nsq"`
 	PostgreSQL    map[string]target.PostgreSQLArgs    `json:"postgresql"`
 	Redis         map[string]target.RedisArgs         `json:"redis"`
 	Webhook       map[string]target.WebhookArgs       `json:"webhook"`
@@ -44,7 +43,6 @@ const (
 func NewConfig() Config {
 	// Make sure to initialize notification targets
 	cfg := Config{
-		NSQ:           make(map[string]target.NSQArgs),
 		AMQP:          make(map[string]target.AMQPArgs),
 		MQTT:          make(map[string]target.MQTTArgs),
 		NATS:          make(map[string]target.NATSArgs),
@@ -55,7 +53,6 @@ func NewConfig() Config {
 		PostgreSQL:    make(map[string]target.PostgreSQLArgs),
 		Elasticsearch: make(map[string]target.ElasticsearchArgs),
 	}
-	cfg.NSQ[defaultTarget] = target.NSQArgs{}
 	cfg.AMQP[defaultTarget] = target.AMQPArgs{}
 	cfg.MQTT[defaultTarget] = target.MQTTArgs{}
 	cfg.NATS[defaultTarget] = target.NATSArgs{}

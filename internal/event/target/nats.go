@@ -28,14 +28,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/uuid"
 	"github.com/minio/minio/internal/event"
 	"github.com/minio/minio/internal/logger"
 	"github.com/minio/minio/internal/once"
 	"github.com/minio/minio/internal/store"
 	xnet "github.com/minio/pkg/v3/net"
 	"github.com/nats-io/nats.go"
-	"github.com/nats-io/stan.go"
 )
 
 // NATS related constants
@@ -55,12 +53,6 @@ const (
 	NATSCertAuthority     = "cert_authority"
 	NATSClientCert        = "client_cert"
 	NATSClientKey         = "client_key"
-
-	// Streaming constants - deprecated
-	NATSStreaming                   = "streaming"
-	NATSStreamingClusterID          = "streaming_cluster_id"
-	NATSStreamingAsync              = "streaming_async"
-	NATSStreamingMaxPubAcksInFlight = "streaming_max_pub_acks_in_flight"
 
 	// JetStream constants
 	NATSJetStream = "jetstream"
@@ -82,12 +74,6 @@ const (
 	EnvNATSCertAuthority     = "MINIO_NOTIFY_NATS_CERT_AUTHORITY"
 	EnvNATSClientCert        = "MINIO_NOTIFY_NATS_CLIENT_CERT"
 	EnvNATSClientKey         = "MINIO_NOTIFY_NATS_CLIENT_KEY"
-
-	// Streaming constants - deprecated
-	EnvNATSStreaming                   = "MINIO_NOTIFY_NATS_STREAMING"
-	EnvNATSStreamingClusterID          = "MINIO_NOTIFY_NATS_STREAMING_CLUSTER_ID"
-	EnvNATSStreamingAsync              = "MINIO_NOTIFY_NATS_STREAMING_ASYNC"
-	EnvNATSStreamingMaxPubAcksInFlight = "MINIO_NOTIFY_NATS_STREAMING_MAX_PUB_ACKS_IN_FLIGHT"
 
 	// Jetstream constants
 	EnvNATSJetStream = "MINIO_NOTIFY_NATS_JETSTREAM"
@@ -116,12 +102,6 @@ type NATSArgs struct {
 	JetStream         struct {
 		Enable bool `json:"enable"`
 	} `json:"jetStream"`
-	Streaming struct {
-		Enable             bool   `json:"enable"`
-		ClusterID          string `json:"clusterID"`
-		Async              bool   `json:"async"`
-		MaxPubAcksInflight int    `json:"maxPubAcksInflight"`
-	} `json:"streaming"`
 
 	RootCAs *x509.CertPool `json:"-"`
 }
@@ -146,12 +126,6 @@ func (n NATSArgs) Validate() error {
 
 	if n.Username != "" && n.Password == "" || n.Username == "" && n.Password != "" {
 		return errors.New("username and password must be specified as a pair")
-	}
-
-	if n.Streaming.Enable {
-		if n.Streaming.ClusterID == "" {
-			return errors.New("empty cluster id")
-		}
 	}
 
 	if n.JetStream.Enable {
@@ -205,40 +179,6 @@ func (n NATSArgs) connectNats() (*nats.Conn, error) {
 	return nats.Connect(n.Address.String(), connOpts...)
 }
 
-// To obtain a streaming connection from args.
-func (n NATSArgs) connectStan() (stan.Conn, error) {
-	scheme := "nats"
-	if n.Secure {
-		scheme = "tls"
-	}
-
-	var addressURL string
-	//nolint:gocritic
-	if n.Username != "" && n.Password != "" {
-		addressURL = scheme + "://" + n.Username + ":" + n.Password + "@" + n.Address.String()
-	} else if n.Token != "" {
-		addressURL = scheme + "://" + n.Token + "@" + n.Address.String()
-	} else {
-		addressURL = scheme + "://" + n.Address.String()
-	}
-
-	u, err := uuid.NewRandom()
-	if err != nil {
-		return nil, err
-	}
-	clientID := u.String()
-
-	connOpts := []stan.Option{stan.NatsURL(addressURL)}
-	if n.Streaming.MaxPubAcksInflight > 0 {
-		connOpts = append(connOpts, stan.MaxPubAcksInflight(n.Streaming.MaxPubAcksInflight))
-	}
-	if n.UserCredentials != "" {
-		connOpts = append(connOpts, stan.NatsOptions(nats.UserCredentials(n.UserCredentials)))
-	}
-
-	return stan.Connect(n.Streaming.ClusterID, clientID, connOpts...)
-}
-
 // NATSTarget - NATS target.
 type NATSTarget struct {
 	initOnce once.Init
@@ -246,7 +186,6 @@ type NATSTarget struct {
 	id         event.TargetID
 	args       NATSArgs
 	natsConn   *nats.Conn
-	stanConn   stan.Conn
 	jstream    nats.JetStream
 	store      store.Store[event.Event]
 	loggerOnce logger.LogOnce
@@ -278,18 +217,10 @@ func (target *NATSTarget) IsActive() (bool, error) {
 
 func (target *NATSTarget) isActive() (bool, error) {
 	var connErr error
-	if target.args.Streaming.Enable {
-		if target.stanConn == nil || target.stanConn.NatsConn() == nil {
-			target.stanConn, connErr = target.args.connectStan()
-		} else if !target.stanConn.NatsConn().IsConnected() {
-			return false, store.ErrNotConnected
-		}
-	} else {
-		if target.natsConn == nil {
-			target.natsConn, connErr = target.args.connectNats()
-		} else if !target.natsConn.IsConnected() {
-			return false, store.ErrNotConnected
-		}
+	if target.natsConn == nil {
+		target.natsConn, connErr = target.args.connectNats()
+	} else if !target.natsConn.IsConnected() {
+		return false, store.ErrNotConnected
 	}
 
 	if connErr != nil {
@@ -343,18 +274,10 @@ func (target *NATSTarget) send(eventData event.Event) error {
 		return err
 	}
 
-	if target.stanConn != nil {
-		if target.args.Streaming.Async {
-			_, err = target.stanConn.PublishAsync(target.args.Subject, data, nil)
-		} else {
-			err = target.stanConn.Publish(target.args.Subject, data)
-		}
+	if target.jstream != nil {
+		_, err = target.jstream.Publish(target.args.Subject, data)
 	} else {
-		if target.jstream != nil {
-			_, err = target.jstream.Publish(target.args.Subject, data)
-		} else {
-			err = target.natsConn.Publish(target.args.Subject, data)
-		}
+		err = target.natsConn.Publish(target.args.Subject, data)
 	}
 	return err
 }
@@ -390,14 +313,6 @@ func (target *NATSTarget) SendFromStore(key store.Key) error {
 // Close - closes underneath connections to NATS server.
 func (target *NATSTarget) Close() (err error) {
 	close(target.quitCh)
-	if target.stanConn != nil {
-		// closing the streaming connection does not close the provided NATS connection.
-		if target.stanConn.NatsConn() != nil {
-			target.stanConn.NatsConn().Close()
-		}
-		return target.stanConn.Close()
-	}
-
 	if target.natsConn != nil {
 		target.natsConn.Close()
 	}
@@ -413,16 +328,9 @@ func (target *NATSTarget) initNATS() error {
 	args := target.args
 
 	var err error
-	if args.Streaming.Enable {
-		target.loggerOnce(context.Background(), errors.New("NATS Streaming is deprecated please migrate to JetStream"), target.ID().String())
-		var stanConn stan.Conn
-		stanConn, err = args.connectStan()
-		target.stanConn = stanConn
-	} else {
-		var natsConn *nats.Conn
-		natsConn, err = args.connectNats()
-		target.natsConn = natsConn
-	}
+	var natsConn *nats.Conn
+	natsConn, err = args.connectNats()
+	target.natsConn = natsConn
 	if err != nil {
 		if err.Error() != nats.ErrNoServers.Error() {
 			target.loggerOnce(context.Background(), err, target.ID().String())
