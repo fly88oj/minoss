@@ -34,8 +34,6 @@ import (
 	idplugin "github.com/minio/minio/internal/config/identity/plugin"
 	polplugin "github.com/minio/minio/internal/config/policy/plugin"
 	"github.com/minio/minio/internal/config/storageclass"
-	"github.com/minio/minio/internal/config/subnet"
-	"github.com/minio/minio/internal/logger"
 	"github.com/minio/mux"
 	"github.com/minio/pkg/v3/policy"
 )
@@ -85,10 +83,6 @@ func (a adminAPIHandlers) DelConfigKVHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Check if subnet proxy being deleted and if so the value of proxy of subnet
-	// target of logger webhook configuration also should be deleted
-	loggerWebhookProxyDeleted := setLoggerWebhookSubnetProxy(subSys, cfg)
-
 	if err = saveServerConfig(ctx, objectAPI, cfg); err != nil {
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
 		return
@@ -103,10 +97,6 @@ func (a adminAPIHandlers) DelConfigKVHandler(w http.ResponseWriter, r *http.Requ
 	dynamic := config.SubSystemsDynamic.Contains(subSys)
 	if dynamic {
 		applyDynamic(ctx, objectAPI, cfg, subSys, r, w)
-		if subSys == config.SubnetSubSys && loggerWebhookProxyDeleted {
-			// Logger webhook proxy deleted, apply the dynamic changes
-			applyDynamic(ctx, objectAPI, cfg, config.LoggerWebhookSubSys, r, w)
-		}
 	}
 }
 
@@ -138,10 +128,9 @@ func (bce badConfigErr) Unwrap() error {
 }
 
 type setConfigResult struct {
-	Cfg                     config.Config
-	SubSys                  string
-	Dynamic                 bool
-	LoggerWebhookCfgUpdated bool
+	Cfg     config.Config
+	SubSys  string
+	Dynamic bool
 }
 
 // SetConfigKVHandler - PUT /minio/admin/v3/set-config-kv
@@ -180,11 +169,6 @@ func (a adminAPIHandlers) SetConfigKVHandler(w http.ResponseWriter, r *http.Requ
 
 	if result.Dynamic {
 		applyDynamic(ctx, objectAPI, result.Cfg, result.SubSys, r, w)
-		// If logger webhook config updated (proxy due to callhome), explicitly dynamically
-		// apply the config
-		if result.LoggerWebhookCfgUpdated {
-			applyDynamic(ctx, objectAPI, result.Cfg, config.LoggerWebhookSubSys, r, w)
-		}
 	}
 
 	writeSuccessResponseHeadersOnly(w)
@@ -215,10 +199,6 @@ func setConfigKV(ctx context.Context, objectAPI ObjectLayer, kvBytes []byte) (re
 		err = badConfigErr{Err: verr}
 		return result, err
 	}
-
-	// Check if subnet proxy being set and if so set the same value to proxy of subnet
-	// target of logger webhook configuration
-	result.LoggerWebhookCfgUpdated = setLoggerWebhookSubnetProxy(result.SubSys, result.Cfg)
 
 	// Update the actual server config on disk.
 	if err = saveServerConfig(ctx, objectAPI, result.Cfg); err != nil {
@@ -524,19 +504,4 @@ func (a adminAPIHandlers) GetConfigHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeSuccessResponseJSON(w, econfigData)
-}
-
-// setLoggerWebhookSubnetProxy - Sets the logger webhook's subnet proxy value to
-// one being set for subnet proxy
-func setLoggerWebhookSubnetProxy(subSys string, cfg config.Config) bool {
-	if subSys == config.SubnetSubSys || subSys == config.LoggerWebhookSubSys {
-		subnetWebhookCfg := cfg[config.LoggerWebhookSubSys][subnet.LoggerWebhookName]
-		loggerWebhookSubnetProxy := subnetWebhookCfg.Get(logger.Proxy)
-		subnetProxy := cfg[config.SubnetSubSys][config.Default].Get(logger.Proxy)
-		if loggerWebhookSubnetProxy != subnetProxy {
-			subnetWebhookCfg.Set(logger.Proxy, subnetProxy)
-			return true
-		}
-	}
-	return false
 }

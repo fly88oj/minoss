@@ -131,12 +131,11 @@ func getLocalServerProperty(endpointServerPools EndpointServerPools, r *http.Req
 	}()
 
 	sensitive := map[string]struct{}{
-		config.EnvAccessKey:         {},
-		config.EnvSecretKey:         {},
-		config.EnvRootUser:          {},
-		config.EnvRootPassword:      {},
-		config.EnvMinIOSubnetAPIKey: {},
-		kms.EnvKMSSecretKey:         {},
+		config.EnvAccessKey:    {},
+		config.EnvSecretKey:    {},
+		config.EnvRootUser:     {},
+		config.EnvRootPassword: {},
+		kms.EnvKMSSecretKey:    {},
 	}
 	for _, v := range os.Environ() {
 		if !strings.HasPrefix(v, "MINIO") && !strings.HasPrefix(v, "_MINIO") {

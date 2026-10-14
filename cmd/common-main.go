@@ -200,7 +200,6 @@ func minioConfigToConsoleFeatures() {
 		os.Setenv("CONSOLE_SECURE_REFERRER_POLICY", valueRefer)
 	}
 
-	globalSubnetConfig.ApplyEnv()
 }
 
 func buildOpenIDConsoleConfig() consoleoauth2.OpenIDPCfg {

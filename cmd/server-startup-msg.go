@@ -48,11 +48,9 @@ func printStartupMessage(apiEndpoints []string, err error) {
 		}
 	}
 
-	if !globalSubnetConfig.Registered() {
-		var builder strings.Builder
-		startupBanner(&builder)
-		logger.Startup(builder.String())
-	}
+	var builder strings.Builder
+	startupBanner(&builder)
+	logger.Startup(builder.String())
 
 	strippedAPIEndpoints := stripStandardPorts(apiEndpoints, globalMinioHost)
 

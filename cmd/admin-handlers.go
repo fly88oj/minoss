@@ -2905,26 +2905,6 @@ func (a adminAPIHandlers) InspectDataHandler(w http.ResponseWriter, r *http.Requ
 		stream := estream.NewWriter(w)
 		defer stream.Close()
 
-		clusterKey, err := bytesToPublicKey(getSubnetAdminPublicKey())
-		if err != nil {
-			bugLogIf(ctx, stream.AddError(err.Error()))
-			return
-		}
-		err = stream.AddKeyEncrypted(clusterKey)
-		if err != nil {
-			bugLogIf(ctx, stream.AddError(err.Error()))
-			return
-		}
-		if b := getClusterMetaInfo(ctx); len(b) > 0 {
-			w, err := stream.AddEncryptedStream("cluster.info", nil)
-			if err != nil {
-				bugLogIf(ctx, err)
-				return
-			}
-			w.Write(b)
-			w.Close()
-		}
-
 		// Add new key for inspect data.
 		if err := stream.AddKeyEncrypted(publicKey); err != nil {
 			bugLogIf(ctx, stream.AddError(err.Error()))
@@ -3083,13 +3063,6 @@ function main() {
 
 main "$@"`, scheme)
 	adminLogIf(ctx, embedFileInZip(inspectZipW, "start-minio.sh", scrb.Bytes(), 0o755))
-}
-
-func getSubnetAdminPublicKey() []byte {
-	if globalIsCICD {
-		return subnetAdminPublicKeyDev
-	}
-	return subnetAdminPublicKey
 }
 
 func createHostAnonymizerForFSMode() map[string]string {

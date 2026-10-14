@@ -117,8 +117,6 @@ const (
 	HealSubSys           = madmin.HealSubSys
 	ScannerSubSys        = madmin.ScannerSubSys
 	CrawlerSubSys        = madmin.CrawlerSubSys
-	SubnetSubSys         = madmin.SubnetSubSys
-	CallhomeSubSys       = madmin.CallhomeSubSys
 	DriveSubSys          = madmin.DriveSubSys
 	BatchSubSys          = madmin.BatchSubSys
 	BrowserSubSys        = madmin.BrowserSubSys
@@ -178,8 +176,6 @@ var SubSystemsDynamic = set.CreateStringSet(
 	CompressionSubSys,
 	ScannerSubSys,
 	HealSubSys,
-	SubnetSubSys,
-	CallhomeSubSys,
 	DriveSubSys,
 	LoggerWebhookSubSys,
 	AuditWebhookSubSys,
@@ -205,8 +201,6 @@ var SubSystemsSingleTargets = set.CreateStringSet(
 	IdentityPluginSubSys,
 	HealSubSys,
 	ScannerSubSys,
-	SubnetSubSys,
-	CallhomeSubSys,
 	DriveSubSys,
 	ILMSubSys,
 	BatchSubSys,

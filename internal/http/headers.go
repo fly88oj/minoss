@@ -255,7 +255,6 @@ const (
 	MinIOCompressed = "X-Minio-Compressed"
 
 	// SUBNET related
-	SubnetAPIKey = "x-subnet-api-key"
 )
 
 // Common http query params S3 API

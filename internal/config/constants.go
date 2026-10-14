@@ -54,10 +54,6 @@ const (
 	EnvSiteName   = "MINIO_SITE_NAME"
 	EnvSiteRegion = "MINIO_SITE_REGION"
 
-	EnvMinIOSubnetLicense = "MINIO_SUBNET_LICENSE" // Deprecated Dec 2021
-	EnvMinIOSubnetAPIKey  = "MINIO_SUBNET_API_KEY"
-	EnvMinIOSubnetProxy   = "MINIO_SUBNET_PROXY"
-
 	EnvMinIOCallhomeEnable    = "MINIO_CALLHOME_ENABLE"
 	EnvMinIOCallhomeFrequency = "MINIO_CALLHOME_FREQUENCY"
 

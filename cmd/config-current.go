@@ -31,7 +31,6 @@ import (
 	"github.com/minio/minio/internal/config"
 	"github.com/minio/minio/internal/config/api"
 	"github.com/minio/minio/internal/config/batch"
-	"github.com/minio/minio/internal/config/callhome"
 	"github.com/minio/minio/internal/config/compress"
 	"github.com/minio/minio/internal/config/dns"
 	"github.com/minio/minio/internal/config/drive"
@@ -47,7 +46,6 @@ import (
 	polplugin "github.com/minio/minio/internal/config/policy/plugin"
 	"github.com/minio/minio/internal/config/scanner"
 	"github.com/minio/minio/internal/config/storageclass"
-	"github.com/minio/minio/internal/config/subnet"
 	"github.com/minio/minio/internal/crypto"
 	xhttp "github.com/minio/minio/internal/http"
 	"github.com/minio/minio/internal/logger"
@@ -71,8 +69,6 @@ func initHelp() {
 		config.AuditWebhookSubSys:   logger.DefaultAuditWebhookKVS,
 		config.AuditKafkaSubSys:     logger.DefaultAuditKafkaKVS,
 		config.ScannerSubSys:        scanner.DefaultKVS,
-		config.SubnetSubSys:         subnet.DefaultKVS,
-		config.CallhomeSubSys:       callhome.DefaultKVS,
 		config.DriveSubSys:          drive.DefaultKVS,
 		config.ILMSubSys:            ilm.DefaultKVS,
 		config.BatchSubSys:          batch.DefaultKVS,
@@ -87,18 +83,6 @@ func initHelp() {
 
 	// Captures help for each sub-system
 	helpSubSys := config.HelpKVS{
-		config.HelpKV{
-			Key:         config.SubnetSubSys,
-			Type:        "string",
-			Description: "register Enterprise license for the cluster",
-			Optional:    true,
-		},
-		config.HelpKV{
-			Key:         config.CallhomeSubSys,
-			Type:        "string",
-			Description: "enable callhome to MinIO SUBNET",
-			Optional:    true,
-		},
 		config.HelpKV{
 			Key:         config.DriveSubSys,
 			Description: "enable drive specific settings",
@@ -265,8 +249,6 @@ func initHelp() {
 		config.NotifyRedisSubSys:    notify.HelpRedis,
 		config.NotifyWebhookSubSys:  notify.HelpWebhook,
 		config.NotifyESSubSys:       notify.HelpES,
-		config.SubnetSubSys:         subnet.HelpSubnet,
-		config.CallhomeSubSys:       callhome.HelpCallhome,
 		config.DriveSubSys:          drive.HelpDrive,
 		config.BrowserSubSys:        browser.Help,
 		config.ILMSubSys:            ilm.Help,
@@ -369,19 +351,6 @@ func validateSubSysConfig(ctx context.Context, s config.Config, subSys string, o
 		if _, err := idplugin.LookupConfig(s[config.IdentityPluginSubSys][config.Default],
 			NewHTTPTransport(), xhttp.DrainBody, globalSite.Region()); err != nil {
 			return err
-		}
-	case config.SubnetSubSys:
-		if _, err := subnet.LookupConfig(s[config.SubnetSubSys][config.Default], nil); err != nil {
-			return err
-		}
-	case config.CallhomeSubSys:
-		cfg, err := callhome.LookupConfig(s[config.CallhomeSubSys][config.Default])
-		if err != nil {
-			return err
-		}
-		// callhome cannot be enabled if license is not registered yet, throw an error.
-		if cfg.Enabled() && !globalSubnetConfig.Registered() {
-			return errors.New("Deployment is not registered with SUBNET. Please register the deployment via 'mc license register ALIAS'")
 		}
 	case config.DriveSubSys:
 		if _, err := drive.LookupConfig(s[config.DriveSubSys][config.Default]); err != nil {
@@ -641,25 +610,6 @@ func applyDynamicConfigForSubSys(ctx context.Context, objAPI ObjectLayer, s conf
 			}
 			if i == 0 {
 				globalStorageClass.Update(sc)
-			}
-		}
-	case config.SubnetSubSys:
-		subnetConfig, err := subnet.LookupConfig(s[config.SubnetSubSys][config.Default], globalRemoteTargetTransport)
-		if err != nil {
-			configLogIf(ctx, fmt.Errorf("Unable to parse subnet configuration: %w", err))
-		} else {
-			globalSubnetConfig.Update(subnetConfig, globalIsCICD)
-			globalSubnetConfig.ApplyEnv() // update environment settings for Console UI
-		}
-	case config.CallhomeSubSys:
-		callhomeCfg, err := callhome.LookupConfig(s[config.CallhomeSubSys][config.Default])
-		if err != nil {
-			configLogIf(ctx, fmt.Errorf("Unable to load callhome config: %w", err))
-		} else {
-			enable := callhomeCfg.Enable && !globalCallhomeConfig.Enabled()
-			globalCallhomeConfig.Update(callhomeCfg)
-			if enable {
-				initCallhome(ctx, objAPI)
 			}
 		}
 	case config.DriveSubSys:
