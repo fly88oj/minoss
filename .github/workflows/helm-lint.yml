@@ -44,3 +44,18 @@ jobs:
             echo "metrics v2 scrape paths are gone from this build; use /minio/metrics/v3/<collector>"
             exit 1
           fi
+          # Every scrape pool needs its own target identity, or all of a release's
+          # pools write the same `up` series and one dead collector makes scraping
+          # look intermittently healthy. Assert one `collector` label per endpoint
+          # and per Probe, whatever the path lists are.
+          sm=$(echo "$rendered" | sed -n '/^kind: ServiceMonitor$/,/^---$/p')
+          probes=$(echo "$rendered" | sed -n '/^kind: Probe$/,$p')
+          endpoints=$(echo "$sm" | grep -c '^      path: /minio/metrics/v3')
+          node_ids=$(echo "$sm" | grep -c 'targetLabel: collector')
+          probe_count=$(echo "$probes" | grep -c '^kind: Probe')
+          probe_ids=$(echo "$probes" | grep -c '^        collector: ')
+          if [ "$endpoints" != "$node_ids" ] || [ "$probe_count" != "$probe_ids" ] || [ "$endpoints" = 0 ]; then
+            echo "expected one collector label per scrape ($endpoints endpoints/$node_ids labels, $probe_count probes/$probe_ids labels)"
+            exit 1
+          fi
+          echo "monitoring scrape: $endpoints per-pod collectors, $probe_count cluster collectors, all identified"

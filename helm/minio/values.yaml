@@ -599,10 +599,36 @@ metrics:
     enabled: false
     # scrape each node/pod individually for additional metrics
     includeNode: false
+    # Metrics v3 collector groups scraped per pod (used when includeNode: true).
+    # These are node-local, so they must be scraped off every pod.
+    paths:
+      - /minio/metrics/v3/debug/go
+      - /minio/metrics/v3/system/process
+      - /minio/metrics/v3/system/cpu
+      - /minio/metrics/v3/system/memory
+    # Metrics v3 collector groups scraped once for the whole cluster. Each one
+    # aggregates from every peer, so scraping them off every pod would collect
+    # the same data N times. See docs/metrics/README.md for all 21 collectors
+    # this build serves; request any path with ?list for the metrics it holds.
+    clusterPaths:
+      - /minio/metrics/v3/cluster/health
+      - /minio/metrics/v3/cluster/config
+      - /minio/metrics/v3/cluster/erasure-set
+      - /minio/metrics/v3/cluster/usage/objects
+      - /minio/metrics/v3/api/requests
     public: true
+    # When public is false the scrapes below send a bearer token. This chart
+    # does not create that Secret - name one you have created yourself here
+    # (it must carry a `token` key); leaving it empty fails the render instead
+    # of installing scrapes that can never authenticate.
+    bearerTokenSecret: ""
     additionalLabels: {}
     annotations: {}
     # for node metrics
+    # Extra endpoint fields for the per-pod ServiceMonitor. `relabelings` here is
+    # merged after the `collector` label the chart adds itself, so it never
+    # replaces it; any other endpoint field (metricRelabelings, honorLabels, ...)
+    # is passed through as-is.
     relabelConfigs: {}
     # for cluster metrics
     relabelConfigsCluster:

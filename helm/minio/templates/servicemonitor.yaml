@@ -1,4 +1,29 @@
-{{- if and .Values.metrics.serviceMonitor.enabled .Values.metrics.serviceMonitor.includeNode }}
+{{- /*
+Metrics scraping for this build.
+
+The legacy /minio/v2/metrics/{node,cluster} endpoints were removed from this
+fork (see docs/adr/0001-removed-subsystems.md); metrics v3 exposes one endpoint
+per collector group, so scraping is now a *list* of paths rather than two fixed
+URLs. The defaults below cover the node-local collectors (per pod, via the
+ServiceMonitor) and a small core of cluster-wide collectors (once for the whole
+cluster, via Probes - each cluster collector aggregates from every peer, so
+scraping it off every pod would multiply the same data).
+
+Paths come from values so operators can add collector groups without editing the
+chart. Valid collector paths: `minio server ... ` serves them under
+/minio/metrics/v3/<collector>; append ?list to any path to see the metrics it
+exposes.
+*/ -}}
+{{- $nodePaths := .Values.metrics.serviceMonitor.paths }}
+{{- $clusterPaths := .Values.metrics.serviceMonitor.clusterPaths }}
+{{- $caHelp := "tls.certSecret must name the secret holding the CA certificate when metrics scraping is enabled with tls.enabled=true" }}
+{{- $tokenHelp := "metrics.serviceMonitor.public=false means the scrape needs a bearer token, but this chart never creates one: set metrics.serviceMonitor.bearerTokenSecret to the name of a Secret you have created with the key `token`" }}
+{{- if and .Values.metrics.serviceMonitor.enabled .Values.metrics.serviceMonitor.includeNode $nodePaths }}
+{{- $caSecret := "" }}
+{{- if .Values.tls.enabled }}{{ $caSecret = required $caHelp .Values.tls.certSecret }}{{ end }}
+{{- $tokenSecret := "" }}
+{{- if not .Values.metrics.serviceMonitor.public }}{{ $tokenSecret = required $tokenHelp .Values.metrics.serviceMonitor.bearerTokenSecret }}{{ end }}
+{{- $nodeRelabels := .Values.metrics.serviceMonitor.relabelConfigs | default dict }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -19,34 +44,46 @@ metadata:
   {{- end }}
 spec:
   endpoints:
-    {{- if .Values.tls.enabled }}
-    - port: https
+    {{- range $path := $nodePaths }}
+    {{- $collector := trimPrefix "/minio/metrics/v3" $path | trimPrefix "/" | replace "/" "-" }}
+    - {{ if $.Values.tls.enabled }}port: https
       scheme: https
       tlsConfig:
         ca:
           secret:
-            name: {{ .Values.tls.certSecret }}
-            key: {{ .Values.tls.publicCrt }}
-        serverName: {{ template "minio.fullname" . }}
-    {{- else }}
-    - port: http
+            name: {{ $caSecret }}
+            key: {{ $.Values.tls.publicCrt }}
+        serverName: {{ template "minio.fullname" $ }}
+      {{- else }}port: http
       scheme: http
-    {{- end }}
-      path: /minio/v2/metrics/node
-      {{- if .Values.metrics.serviceMonitor.interval }}
-      interval: {{ .Values.metrics.serviceMonitor.interval }}
       {{- end }}
-      {{- if .Values.metrics.serviceMonitor.scrapeTimeout }}
-      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+      path: {{ $path }}
+      {{- /* One scrape config per collector path, so each needs its own
+           target identity: without this label all of a pod's scrape pools write
+           the same `up`/`scrape_*` series and one dead collector makes target
+           health flap. */}}
+      relabelings:
+        - targetLabel: collector
+          replacement: {{ $collector }}
+          action: replace
+        {{- with (get $nodeRelabels "relabelings") }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if $.Values.metrics.serviceMonitor.interval }}
+      interval: {{ $.Values.metrics.serviceMonitor.interval }}
       {{- end }}
-      {{- if .Values.metrics.serviceMonitor.relabelConfigs }}
-        {{- toYaml .Values.metrics.serviceMonitor.relabelConfigs | nindent 6 }}
+      {{- if $.Values.metrics.serviceMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ $.Values.metrics.serviceMonitor.scrapeTimeout }}
       {{- end }}
-      {{- if not .Values.metrics.serviceMonitor.public }}
+      {{- with (omit $nodeRelabels "relabelings") }}
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- if not $.Values.metrics.serviceMonitor.public }}
       bearerTokenSecret:
-        name: {{ template "minio.fullname" . }}-prometheus
+        name: {{ $tokenSecret }}
         key: token
       {{- end }}
+    {{- end }}
   namespaceSelector:
     matchNames:
       - {{ .Release.Namespace | quote }}
@@ -56,57 +93,72 @@ spec:
       release: {{ .Release.Name }}
       monitoring: "true"
 {{- end }}
-{{- if .Values.metrics.serviceMonitor.enabled }}
+{{- if and .Values.metrics.serviceMonitor.enabled $clusterPaths }}
+{{- $caSecret := "" }}
+{{- if .Values.tls.enabled }}{{ $caSecret = required $caHelp .Values.tls.certSecret }}{{ end }}
+{{- $tokenSecret := "" }}
+{{- if not .Values.metrics.serviceMonitor.public }}{{ $tokenSecret = required $tokenHelp .Values.metrics.serviceMonitor.bearerTokenSecret }}{{ end }}
+{{- range $path := $clusterPaths }}
 ---
+{{- $name := trimPrefix "/minio/metrics/v3" $path | trimPrefix "/" | replace "/" "-" }}
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
-  name: {{ template "minio.fullname" . }}-cluster
-  {{- if .Values.metrics.serviceMonitor.namespace }}
-  namespace: {{ .Values.metrics.serviceMonitor.namespace }}
+  name: {{ template "minio.fullname" $ }}-{{ $name }}
+  {{- if $.Values.metrics.serviceMonitor.namespace }}
+  namespace: {{ $.Values.metrics.serviceMonitor.namespace }}
   {{- end }}
   labels:
-    app: {{ template "minio.name" . }}
-    chart: {{ template "minio.chart" . }}
-    release: {{ .Release.Name }}
-    heritage: {{ .Release.Service }}
-    {{- if .Values.metrics.serviceMonitor.additionalLabels }}
-      {{- toYaml .Values.metrics.serviceMonitor.additionalLabels | nindent 4 }}
+    app: {{ template "minio.name" $ }}
+    chart: {{ template "minio.chart" $ }}
+    release: {{ $.Release.Name }}
+    heritage: {{ $.Release.Service }}
+    {{- if $.Values.metrics.serviceMonitor.additionalLabels }}
+      {{- toYaml $.Values.metrics.serviceMonitor.additionalLabels | nindent 4 }}
     {{- end }}
+  {{- if $.Values.metrics.serviceMonitor.annotations }}
+  annotations: {{- toYaml $.Values.metrics.serviceMonitor.annotations | nindent 4 }}
+  {{- end }}
 spec:
-  jobName: {{ template "minio.fullname" . }}
-  {{- if .Values.tls.enabled }}
+  jobName: {{ template "minio.fullname" $ }}
+  {{- if $.Values.tls.enabled }}
   tlsConfig:
     ca:
       secret:
-        name: {{ .Values.tls.certSecret }}
-        key: {{ .Values.tls.publicCrt }}
-    serverName: {{ template "minio.fullname" . }}
+        name: {{ $caSecret }}
+        key: {{ $.Values.tls.publicCrt }}
+    serverName: {{ template "minio.fullname" $ }}
   {{- end }}
   prober:
-    url: {{ template "minio.fullname" . }}.{{ .Release.Namespace }}:{{ .Values.service.port }}
-    path: /minio/v2/metrics/cluster
-    {{- if .Values.tls.enabled }}
+    url: {{ template "minio.fullname" $ }}.{{ $.Release.Namespace }}:{{ $.Values.service.port }}
+    path: {{ $path }}
+    {{- if $.Values.tls.enabled }}
     scheme: https
     {{- else }}
     scheme: http
     {{- end }}
-  {{- if .Values.metrics.serviceMonitor.relabelConfigsCluster }}
-    {{- toYaml .Values.metrics.serviceMonitor.relabelConfigsCluster | nindent 2 }}
+  {{- /* interval, scrapeTimeout and bearerTokenSecret are Probe *spec* fields;
+       they used to be nested under targets.staticConfig, where the CRD's
+       structural schema silently drops them. */ -}}
+  {{- if $.Values.metrics.serviceMonitor.interval }}
+  interval: {{ $.Values.metrics.serviceMonitor.interval }}
+  {{- end }}
+  {{- if $.Values.metrics.serviceMonitor.scrapeTimeout }}
+  scrapeTimeout: {{ $.Values.metrics.serviceMonitor.scrapeTimeout }}
+  {{- end }}
+  {{- if not $.Values.metrics.serviceMonitor.public }}
+  bearerTokenSecret:
+    name: {{ $tokenSecret }}
+    key: token
+  {{- end }}
+  {{- if $.Values.metrics.serviceMonitor.relabelConfigsCluster }}
+    {{- toYaml $.Values.metrics.serviceMonitor.relabelConfigsCluster | nindent 2 }}
   {{- end }}
   targets:
     staticConfig:
       static:
-      - {{ template "minio.fullname" . }}.{{ .Release.Namespace }}
-      {{- if not .Values.metrics.serviceMonitor.public }}
-      {{- if .Values.metrics.serviceMonitor.interval }}
-      interval: {{ .Values.metrics.serviceMonitor.interval }}
-      {{- end }}
-      {{- if .Values.metrics.serviceMonitor.scrapeTimeout }}
-      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
-      {{- end }}
-      bearerTokenSecret:
-        name: {{ template "minio.fullname" . }}-prometheus
-        key: token
-      {{- end }}
+      - {{ template "minio.fullname" $ }}.{{ $.Release.Namespace }}
+      labels:
+        collector: {{ $name }}
+{{- end }}
 {{- end }}
