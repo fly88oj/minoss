@@ -15,47 +15,24 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// In-place binary self-update was removed for the minoss fork: the download
+// path was hardwired to dl.min.io and would replace this binary with upstream
+// MinIO. Update via your package manager or the fork's GitHub releases.
+
 package cmd
 
 import (
 	"bufio"
-	"crypto"
-	"crypto/tls"
-	"encoding/hex"
-	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
-	xhttp "github.com/minio/minio/internal/http"
 	"github.com/minio/minio/internal/logger"
 	"github.com/minio/pkg/v3/env"
-	xnet "github.com/minio/pkg/v3/net"
-	"github.com/minio/selfupdate"
 	gopsutilcpu "github.com/shirou/gopsutil/v3/cpu"
-	"github.com/valyala/bytebufferpool"
-)
-
-const (
-	envMinisignPubKey = "MINIO_UPDATE_MINISIGN_PUBKEY"
-	updateTimeout     = 10 * time.Second
-)
-
-var (
-	// Newer official download info URLs appear earlier below.
-	minioReleaseInfoURL = MinioReleaseURL + "minio.sha256sum"
-
-	// For windows our files have .exe additionally.
-	minioReleaseWindowsInfoURL = MinioReleaseURL + "minio.exe.sha256sum"
 )
 
 // minioVersionToReleaseTime - parses a standard official release
@@ -67,40 +44,19 @@ func minioVersionToReleaseTime(version string) (releaseTime time.Time, err error
 	return time.Parse(time.RFC3339, version)
 }
 
-// releaseTimeToReleaseTag - converts a time to a string formatted as
-// an official MinIO release tag.
-//
-// An official minio release tag looks like:
-// `RELEASE.2017-09-29T19-16-56Z`
-func releaseTimeToReleaseTag(releaseTime time.Time) string {
-	return "RELEASE." + releaseTime.Format(MinioReleaseTagTimeLayout)
-}
-
-// releaseTagToReleaseTime - reverse of `releaseTimeToReleaseTag()`
-func releaseTagToReleaseTime(releaseTag string) (releaseTime time.Time, err error) {
-	fields := strings.Split(releaseTag, ".")
-	if len(fields) < 2 || len(fields) > 4 {
-		return releaseTime, fmt.Errorf("%s is not a valid release tag", releaseTag)
-	}
-	if fields[0] != "RELEASE" {
-		return releaseTime, fmt.Errorf("%s is not a valid release tag", releaseTag)
-	}
-	return time.Parse(MinioReleaseTagTimeLayout, fields[1])
-}
-
 // getModTime - get the file modification time of `path`
 func getModTime(path string) (t time.Time, err error) {
 	// Convert to absolute path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return t, fmt.Errorf("Unable to get absolute path of %s. %w", path, err)
+		return t, fmt.Errorf("unable to get absolute path of %s: %w", path, err)
 	}
 
 	// Version is minio non-standard, we will use minio binary's
 	// ModTime as release time.
 	fi, err := Stat(absPath)
 	if err != nil {
-		return t, fmt.Errorf("Unable to get ModTime of %s. %w", absPath, err)
+		return t, fmt.Errorf("unable to get ModTime of %s: %w", absPath, err)
 	}
 
 	// Return the ModTime
@@ -303,348 +259,10 @@ func getUserAgent(mode string) string {
 			coreMap[cpus[i].CoreID] = struct{}{}
 		}
 		cpu := cpus[0]
-		uaAppend(" CPU ", fmt.Sprintf("(total_cpus:%d, total_cores:%d; vendor:%s; family:%s; model:%s; stepping:%d; model_name:%s)",
+		uaAppend(" CPU ", fmt.Sprintf("(total_cpus:%d, total_cores:%d;vendor:%s;family:%s;model:%s;stepping:%d;model_name:%s)",
 			len(cpuMap), len(coreMap), cpu.VendorID, cpu.Family, cpu.Model, cpu.Stepping, cpu.ModelName))
 	}
 	uaAppend(")", "")
 
 	return strings.Join(userAgentParts, "")
-}
-
-func downloadReleaseURL(u *url.URL, timeout time.Duration, mode string) (content string, err error) {
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		return content, AdminError{
-			Code:       AdminUpdateUnexpectedFailure,
-			Message:    err.Error(),
-			StatusCode: http.StatusInternalServerError,
-		}
-	}
-	req.Header.Set("User-Agent", getUserAgent(mode))
-
-	client := &http.Client{Transport: getUpdateTransport(timeout)}
-	resp, err := client.Do(req)
-	if err != nil {
-		if xnet.IsNetworkOrHostDown(err, false) {
-			return content, AdminError{
-				Code:       AdminUpdateURLNotReachable,
-				Message:    err.Error(),
-				StatusCode: http.StatusServiceUnavailable,
-			}
-		}
-		return content, AdminError{
-			Code:       AdminUpdateUnexpectedFailure,
-			Message:    err.Error(),
-			StatusCode: http.StatusInternalServerError,
-		}
-	}
-	if resp == nil {
-		return content, AdminError{
-			Code:       AdminUpdateUnexpectedFailure,
-			Message:    fmt.Sprintf("No response from server to download URL %s", u),
-			StatusCode: http.StatusInternalServerError,
-		}
-	}
-	defer xhttp.DrainBody(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return content, AdminError{
-			Code:       AdminUpdateUnexpectedFailure,
-			Message:    fmt.Sprintf("Error downloading URL %s. Response: %v", u, resp.Status),
-			StatusCode: resp.StatusCode,
-		}
-	}
-
-	contentBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return content, AdminError{
-			Code:       AdminUpdateUnexpectedFailure,
-			Message:    fmt.Sprintf("Error reading response. %s", err),
-			StatusCode: http.StatusInternalServerError,
-		}
-	}
-
-	return string(contentBytes), nil
-}
-
-func releaseInfoToReleaseTime(releaseInfo string) (releaseTime time.Time, err error) {
-	// Split release of style minio.RELEASE.2019-08-21T19-40-07Z.<hotfix>
-	nfields := strings.SplitN(releaseInfo, ".", 2)
-	if len(nfields) != 2 {
-		err = fmt.Errorf("Unknown release information `%s`", releaseInfo)
-		return releaseTime, err
-	}
-	if nfields[0] != "minio" {
-		err = fmt.Errorf("Unknown release `%s`", releaseInfo)
-		return releaseTime, err
-	}
-
-	releaseTime, err = releaseTagToReleaseTime(nfields[1])
-	if err != nil {
-		err = fmt.Errorf("Unknown release tag format. %w", err)
-	}
-	return releaseTime, err
-}
-
-// parseReleaseData - parses release info file content fetched from
-// official minio download server.
-//
-// The expected format is a single line with two words like:
-//
-// fbe246edbd382902db9a4035df7dce8cb441357d minio.RELEASE.2016-10-07T01-16-39Z.<hotfix_optional>
-//
-// The second word must be `minio.` appended to a standard release tag.
-func parseReleaseData(data string) (sha256Sum []byte, releaseTime time.Time, releaseInfo string, err error) {
-	defer func() {
-		if err != nil {
-			err = AdminError{
-				Code:       AdminUpdateUnexpectedFailure,
-				Message:    err.Error(),
-				StatusCode: http.StatusInternalServerError,
-			}
-		}
-	}()
-
-	fields := strings.Fields(data)
-	if len(fields) != 2 {
-		err = fmt.Errorf("Unknown release data `%s`", data)
-		return sha256Sum, releaseTime, releaseInfo, err
-	}
-
-	sha256Sum, err = hex.DecodeString(fields[0])
-	if err != nil {
-		return sha256Sum, releaseTime, releaseInfo, err
-	}
-
-	releaseInfo = fields[1]
-
-	releaseTime, err = releaseInfoToReleaseTime(releaseInfo)
-	return sha256Sum, releaseTime, releaseInfo, err
-}
-
-func getUpdateTransport(timeout time.Duration) http.RoundTripper {
-	var updateTransport http.RoundTripper = &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           xhttp.NewInternodeDialContext(timeout, globalTCPOptions),
-		IdleConnTimeout:       timeout,
-		TLSHandshakeTimeout:   timeout,
-		ExpectContinueTimeout: timeout,
-		TLSClientConfig: &tls.Config{
-			RootCAs:            globalRootCAs,
-			ClientSessionCache: tls.NewLRUClientSessionCache(tlsClientSessionCacheSize),
-		},
-		DisableCompression: true,
-	}
-	return updateTransport
-}
-
-func getLatestReleaseTime(u *url.URL, timeout time.Duration, mode string) (sha256Sum []byte, releaseTime time.Time, err error) {
-	data, err := downloadReleaseURL(u, timeout, mode)
-	if err != nil {
-		return sha256Sum, releaseTime, err
-	}
-
-	sha256Sum, releaseTime, _, err = parseReleaseData(data)
-	return sha256Sum, releaseTime, err
-}
-
-const (
-	// Kubernetes deployment doc link.
-	kubernetesDeploymentDoc = "https://docs.min.io/community/minio-object-store/operations/deployments/kubernetes.html"
-
-	// Mesos deployment doc link.
-	mesosDeploymentDoc = "https://docs.min.io/community/minio-object-store/operations/deployments/kubernetes.html"
-)
-
-func getDownloadURL(releaseTag string) (downloadURL string) {
-	// Check if we are in DCOS environment, return
-	// deployment guide for update procedures.
-	if IsDCOS() {
-		return mesosDeploymentDoc
-	}
-
-	// Check if we are in kubernetes environment, return
-	// deployment guide for update procedures.
-	if IsKubernetes() {
-		return kubernetesDeploymentDoc
-	}
-
-	// Check if we are docker environment, return docker update command
-	if IsDocker() {
-		// Construct release tag name.
-		return fmt.Sprintf("podman pull quay.io/minio/minio:%s", releaseTag)
-	}
-
-	// For binary only installations, we return link to the latest binary.
-	if runtime.GOOS == "windows" {
-		return MinioReleaseURL + "minio.exe"
-	}
-
-	return MinioReleaseURL + "minio"
-}
-
-func getUpdateReaderFromURL(u *url.URL, transport http.RoundTripper, mode string) (io.ReadCloser, error) {
-	clnt := &http.Client{
-		Transport: transport,
-	}
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, AdminError{
-			Code:       AdminUpdateUnexpectedFailure,
-			Message:    err.Error(),
-			StatusCode: http.StatusInternalServerError,
-		}
-	}
-
-	req.Header.Set("User-Agent", getUserAgent(mode))
-
-	resp, err := clnt.Do(req)
-	if err != nil {
-		if xnet.IsNetworkOrHostDown(err, false) {
-			return nil, AdminError{
-				Code:       AdminUpdateURLNotReachable,
-				Message:    err.Error(),
-				StatusCode: http.StatusServiceUnavailable,
-			}
-		}
-		return nil, AdminError{
-			Code:       AdminUpdateUnexpectedFailure,
-			Message:    err.Error(),
-			StatusCode: http.StatusInternalServerError,
-		}
-	}
-	return resp.Body, nil
-}
-
-var updateInProgress atomic.Uint32
-
-// Function to get the reader from an architecture
-func downloadBinary(u *url.URL, mode string) (binCompressed []byte, bin []byte, err error) {
-	transport := getUpdateTransport(30 * time.Second)
-	var reader io.ReadCloser
-	if u.Scheme == "https" || u.Scheme == "http" {
-		reader, err = getUpdateReaderFromURL(u, transport, mode)
-		if err != nil {
-			return nil, nil, err
-		}
-	} else {
-		return nil, nil, fmt.Errorf("unsupported protocol scheme: %s", u.Scheme)
-	}
-	defer xhttp.DrainBody(reader)
-
-	b := bytebufferpool.Get()
-	bc := bytebufferpool.Get()
-	defer func() {
-		b.Reset()
-		bc.Reset()
-
-		bytebufferpool.Put(b)
-		bytebufferpool.Put(bc)
-	}()
-
-	w, err := zstd.NewWriter(bc)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if _, err = io.Copy(w, io.TeeReader(reader, b)); err != nil {
-		return nil, nil, err
-	}
-
-	w.Close()
-	return bc.Bytes(), b.Bytes(), nil
-}
-
-const (
-	// Update this whenever the official minisign pubkey is rotated.
-	defaultMinisignPubkey = "RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGav"
-)
-
-func verifyBinary(u *url.URL, sha256Sum []byte, releaseInfo, mode string, reader io.Reader) (err error) {
-	if !updateInProgress.CompareAndSwap(0, 1) {
-		return errors.New("update already in progress")
-	}
-	defer updateInProgress.Store(0)
-
-	transport := getUpdateTransport(30 * time.Second)
-	opts := selfupdate.Options{
-		Hash:     crypto.SHA256,
-		Checksum: sha256Sum,
-	}
-
-	if err := opts.CheckPermissions(); err != nil {
-		return AdminError{
-			Code:       AdminUpdateApplyFailure,
-			Message:    fmt.Sprintf("server update failed with: %s, do not restart the servers yet", err),
-			StatusCode: http.StatusInternalServerError,
-		}
-	}
-
-	minisignPubkey := env.Get(envMinisignPubKey, defaultMinisignPubkey)
-	if minisignPubkey != "" {
-		v := selfupdate.NewVerifier()
-		u.Path = path.Dir(u.Path) + slashSeparator + releaseInfo + ".minisig"
-		if err = v.LoadFromURL(u.String(), minisignPubkey, transport); err != nil {
-			return AdminError{
-				Code:       AdminUpdateApplyFailure,
-				Message:    fmt.Sprintf("signature loading failed for %v with %v", u, err),
-				StatusCode: http.StatusInternalServerError,
-			}
-		}
-		opts.Verifier = v
-	}
-
-	if err = selfupdate.PrepareAndCheckBinary(reader, opts); err != nil {
-		var pathErr *os.PathError
-		if errors.As(err, &pathErr) {
-			return AdminError{
-				Code: AdminUpdateApplyFailure,
-				Message: fmt.Sprintf("Unable to update the binary at %s: %v",
-					filepath.Dir(pathErr.Path), pathErr.Err),
-				StatusCode: http.StatusForbidden,
-			}
-		}
-		return AdminError{
-			Code:       AdminUpdateApplyFailure,
-			Message:    err.Error(),
-			StatusCode: http.StatusInternalServerError,
-		}
-	}
-
-	return nil
-}
-
-func commitBinary() (err error) {
-	if !updateInProgress.CompareAndSwap(0, 1) {
-		return errors.New("update already in progress")
-	}
-	defer updateInProgress.Store(0)
-
-	opts := selfupdate.Options{}
-
-	if err = selfupdate.CommitBinary(opts); err != nil {
-		if rerr := selfupdate.RollbackError(err); rerr != nil {
-			return AdminError{
-				Code:       AdminUpdateApplyFailure,
-				Message:    fmt.Sprintf("Failed to rollback from bad update: %v", rerr),
-				StatusCode: http.StatusInternalServerError,
-			}
-		}
-		var pathErr *os.PathError
-		if errors.As(err, &pathErr) {
-			return AdminError{
-				Code: AdminUpdateApplyFailure,
-				Message: fmt.Sprintf("Unable to update the binary at %s: %v",
-					filepath.Dir(pathErr.Path), pathErr.Err),
-				StatusCode: http.StatusForbidden,
-			}
-		}
-		return AdminError{
-			Code:       AdminUpdateApplyFailure,
-			Message:    err.Error(),
-			StatusCode: http.StatusInternalServerError,
-		}
-	}
-
-	return nil
 }

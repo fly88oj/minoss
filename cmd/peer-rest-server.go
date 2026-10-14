@@ -21,13 +21,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,7 +33,6 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
-	"github.com/klauspost/compress/zstd"
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/madmin-go/v3/logger/log"
 	"github.com/minio/minio/internal/bucket/bandwidth"
@@ -602,68 +599,6 @@ func (s *peerRESTServer) PutBucketNotificationHandler(w http.ResponseWriter, r *
 // HealthHandler - returns true of health
 func (s *peerRESTServer) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	s.IsValid(w, r)
-}
-
-// VerifyBinary - verifies the downloaded binary is in-tact
-func (s *peerRESTServer) VerifyBinaryHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.IsValid(w, r) {
-		s.writeErrorResponse(w, errors.New("Invalid request"))
-		return
-	}
-
-	if r.ContentLength < 0 {
-		s.writeErrorResponse(w, errInvalidArgument)
-		return
-	}
-
-	u, err := url.Parse(r.Form.Get(peerRESTURL))
-	if err != nil {
-		s.writeErrorResponse(w, err)
-		return
-	}
-
-	sha256Sum, err := hex.DecodeString(r.Form.Get(peerRESTSha256Sum))
-	if err != nil {
-		s.writeErrorResponse(w, err)
-		return
-	}
-	releaseInfo := r.Form.Get(peerRESTReleaseInfo)
-
-	lrTime, err := releaseInfoToReleaseTime(releaseInfo)
-	if err != nil {
-		s.writeErrorResponse(w, err)
-		return
-	}
-
-	if lrTime.Sub(currentReleaseTime) <= 0 {
-		s.writeErrorResponse(w, fmt.Errorf("server is running the latest version: %s", Version))
-		return
-	}
-
-	zr, err := zstd.NewReader(r.Body)
-	if err != nil {
-		s.writeErrorResponse(w, err)
-		return
-	}
-	defer zr.Close()
-
-	if err = verifyBinary(u, sha256Sum, releaseInfo, getMinioMode(), zr); err != nil {
-		s.writeErrorResponse(w, err)
-		return
-	}
-}
-
-// CommitBinary - overwrites the current binary with the new one.
-func (s *peerRESTServer) CommitBinaryHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.IsValid(w, r) {
-		s.writeErrorResponse(w, errors.New("Invalid request"))
-		return
-	}
-
-	if err := commitBinary(); err != nil {
-		s.writeErrorResponse(w, err)
-		return
-	}
 }
 
 var errUnsupportedSignal = fmt.Errorf("unsupported signal")
@@ -1356,8 +1291,6 @@ func registerPeerRESTHandlers(router *mux.Router, gm *grid.Manager) {
 	server := &peerRESTServer{}
 	subrouter := router.PathPrefix(peerRESTPrefix).Subrouter()
 	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodHealth).HandlerFunc(h(server.HealthHandler))
-	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodVerifyBinary).HandlerFunc(h(server.VerifyBinaryHandler)).Queries(restQueries(peerRESTURL, peerRESTSha256Sum, peerRESTReleaseInfo)...)
-	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodCommitBinary).HandlerFunc(h(server.CommitBinaryHandler))
 	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodGetReplicationMRF).HandlerFunc(httpTraceHdrs(server.GetReplicationMRFHandler)).Queries(restQueries(peerRESTBucket)...)
 	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodStartProfiling).HandlerFunc(h(server.StartProfilingHandler)).Queries(restQueries(peerRESTProfiler)...)
 	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodDownloadProfilingData).HandlerFunc(h(server.DownloadProfilingDataHandler))

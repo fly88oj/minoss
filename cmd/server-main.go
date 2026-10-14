@@ -851,16 +851,6 @@ func serverMain(ctx *cli.Context) {
 		getCert = globalTLSCerts.GetCertificate
 	}
 
-	// Check for updates in non-blocking manner.
-	go func() {
-		if !globalServerCtxt.Quiet && !globalInplaceUpdateDisabled {
-			// Check for new updates from dl.min.io.
-			bootstrapTrace("checkUpdate", func() {
-				checkUpdate(getMinioMode())
-			})
-		}
-	}()
-
 	// Set system resources to maximum.
 	bootstrapTrace("setMaxResources", func() {
 		_ = setMaxResources(globalServerCtxt)

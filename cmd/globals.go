@@ -202,7 +202,6 @@ var (
 	globalBrowserConfig browser.Config
 
 	// This flag is set to 'true' when MINIO_UPDATE env is set to 'off'. Default is false.
-	globalInplaceUpdateDisabled = false
 
 	// Captures site name and region
 	globalSite config.Site

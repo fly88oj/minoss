@@ -21,7 +21,6 @@ require (
 	github.com/beevik/ntp v1.4.3
 	github.com/buger/jsonparser v1.1.1
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/cheggaaa/pb v1.0.29
 	github.com/coreos/go-oidc/v3 v3.14.1
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/cosnicolaou/pbzip2 v1.0.5
@@ -62,7 +61,6 @@ require (
 	github.com/minio/minio-go/v7 v7.0.91
 	github.com/minio/mux v1.9.2
 	github.com/minio/pkg/v3 v3.1.3
-	github.com/minio/selfupdate v0.6.0
 	github.com/minio/simdjson-go v0.4.5
 	github.com/minio/sio v0.4.1
 	github.com/minio/xxml v0.0.3
@@ -136,6 +134,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.0.0 // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
+	github.com/cheggaaa/pb v1.0.29 // indirect
 	github.com/cncf/xds/go v0.0.0-20250326154945-ae57f3c0d45f // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -214,6 +213,7 @@ require (
 	github.com/minio/filepath v1.0.0 // indirect
 	github.com/minio/mc v0.0.0-20250313080218-cf909e1063a9 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
+	github.com/minio/selfupdate v0.6.0 // indirect
 	github.com/minio/websocket v1.6.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect

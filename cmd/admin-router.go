@@ -151,12 +151,6 @@ func registerAdminRouter(router *mux.Router, enableConfigOps bool) {
 		// Deprecated: Restart and stop MinIO service.
 		adminRouter.Methods(http.MethodPost).Path(adminVersion+"/service").HandlerFunc(adminMiddleware(adminAPI.ServiceHandler, traceAllFlag)).Queries("action", "{action:.*}")
 
-		// Update all MinIO servers type=2
-		adminRouter.Methods(http.MethodPost).Path(adminVersion+"/update").HandlerFunc(adminMiddleware(adminAPI.ServerUpdateV2Handler, traceAllFlag)).Queries("updateURL", "{updateURL:.*}", "type", "2")
-
-		// Deprecated: Update MinIO servers.
-		adminRouter.Methods(http.MethodPost).Path(adminVersion+"/update").HandlerFunc(adminMiddleware(adminAPI.ServerUpdateHandler, traceAllFlag)).Queries("updateURL", "{updateURL:.*}")
-
 		// Info operations
 		adminRouter.Methods(http.MethodGet).Path(adminVersion + "/info").HandlerFunc(adminMiddleware(adminAPI.ServerInfoHandler, traceAllFlag, noObjLayerFlag))
 		adminRouter.Methods(http.MethodGet, http.MethodPost).Path(adminVersion + "/inspect-data").HandlerFunc(adminMiddleware(adminAPI.InspectDataHandler, noGZFlag, traceHdrsS3HFlag))

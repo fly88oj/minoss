@@ -28,8 +28,6 @@ const (
 
 const (
 	peerRESTMethodHealth                = "/health"
-	peerRESTMethodVerifyBinary          = "/verifybinary"
-	peerRESTMethodCommitBinary          = "/commitbinary"
 	peerRESTMethodStartProfiling        = "/startprofiling"
 	peerRESTMethodDownloadProfilingData = "/downloadprofilingdata"
 	peerRESTMethodSpeedTest             = "/speedtest"
@@ -69,10 +67,7 @@ const (
 	peerRESTDryRun          = "dry-run"
 	peerRESTUploadID        = "up-id"
 
-	peerRESTURL         = "url"
-	peerRESTSha256Sum   = "sha256sum"
-	peerRESTReleaseInfo = "releaseinfo"
-	peerRESTExecAt      = "exec-at"
+	peerRESTExecAt = "exec-at"
 
 	peerRESTListenBucket = "bucket"
 	peerRESTListenPrefix = "prefix"
