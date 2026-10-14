@@ -38,6 +38,7 @@ import (
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio/internal/auth"
 	"github.com/minio/minio/internal/config/dns"
+	"github.com/minio/minio/internal/iam"
 	"github.com/minio/minio/internal/logger"
 	"github.com/minio/mux"
 	xldap "github.com/minio/pkg/v3/ldap"
@@ -63,7 +64,7 @@ func (a adminAPIHandlers) RemoveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ok {
-		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errIAMActionNotAllowed), r.URL)
+		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrIAMActionNotAllowed), r.URL)
 		return
 	}
 
@@ -74,14 +75,14 @@ func (a adminAPIHandlers) RemoveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ok {
-		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errIAMActionNotAllowed), r.URL)
+		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrIAMActionNotAllowed), r.URL)
 		return
 	}
 
 	// When the user is root credential you are not allowed to
 	// remove the root user. Also you cannot delete yourself.
 	if accessKey == globalActiveCred.AccessKey || accessKey == cred.AccessKey {
-		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errIAMActionNotAllowed), r.URL)
+		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrIAMActionNotAllowed), r.URL)
 		return
 	}
 
@@ -154,7 +155,7 @@ func (a adminAPIHandlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	// Add ldap users which have mapped policies if in LDAP mode
 	// FIXME(vadmeste): move this to policy info in the future
 	ldapUsers, err := globalIAMSys.ListLDAPUsers(ctx)
-	if err != nil && err != errIAMActionNotAllowed {
+	if err != nil && err != iam.ErrIAMActionNotAllowed {
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
 		return
 	}
@@ -251,18 +252,18 @@ func (a adminAPIHandlers) UpdateGroupMembers(w http.ResponseWriter, r *http.Requ
 	// Reject if the group add and remove are temporary credentials, or root credential.
 	for _, member := range updReq.Members {
 		ok, _, err := globalIAMSys.IsTempUser(member)
-		if err != nil && err != errNoSuchUser {
+		if err != nil && err != iam.ErrNoSuchUser {
 			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
 			return
 		}
 		if ok {
-			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errIAMActionNotAllowed), r.URL)
+			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrIAMActionNotAllowed), r.URL)
 			return
 		}
 		// When the user is root credential you are not allowed to
 		// add policies for root user.
 		if member == globalActiveCred.AccessKey {
-			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errIAMActionNotAllowed), r.URL)
+			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrIAMActionNotAllowed), r.URL)
 			return
 		}
 	}
@@ -275,7 +276,7 @@ func (a adminAPIHandlers) UpdateGroupMembers(w http.ResponseWriter, r *http.Requ
 		if _, gerr := globalIAMSys.GetGroupDescription(updReq.Group); gerr != nil {
 			// If group does not exist, then check if the group has beginning and end space characters
 			// we will reject such group names.
-			if errors.Is(gerr, errNoSuchGroup) && hasSpaceBE(updReq.Group) {
+			if errors.Is(gerr, iam.ErrNoSuchGroup) && hasSpaceBE(updReq.Group) {
 				writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrAdminResourceInvalidArgument), r.URL)
 				return
 			}
@@ -284,7 +285,7 @@ func (a adminAPIHandlers) UpdateGroupMembers(w http.ResponseWriter, r *http.Requ
 		if globalIAMSys.LDAPConfig.Enabled() {
 			// We don't allow internal group manipulation in this API when LDAP
 			// is enabled for now.
-			err = errIAMActionNotAllowed
+			err = iam.ErrIAMActionNotAllowed
 		} else {
 			updatedAt, err = globalIAMSys.AddUsersToGroup(ctx, updReq.Group, updReq.Members)
 		}
@@ -525,7 +526,7 @@ func (a adminAPIHandlers) AddUser(w http.ResponseWriter, r *http.Request) {
 
 	// We don't allow internal user creation with LDAP enabled for now.
 	if globalIAMSys.LDAPConfig.Enabled() {
-		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errIAMActionNotAllowed), r.URL)
+		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrIAMActionNotAllowed), r.URL)
 		return
 	}
 
@@ -670,7 +671,7 @@ func (a adminAPIHandlers) AddServiceAccount(w http.ResponseWriter, r *http.Reque
 		// It could be a regular user account or the root account.
 		_, isRegularUser := globalIAMSys.GetUser(ctx, targetUser)
 		if !isRegularUser && targetUser != globalActiveCred.AccessKey {
-			apiErr := toAdminAPIErr(ctx, errNoSuchUser)
+			apiErr := toAdminAPIErr(ctx, iam.ErrNoSuchUser)
 			apiErr.Description = fmt.Sprintf("Specified target user %s does not exist", targetUser)
 			writeErrorResponseJSON(ctx, w, apiErr, r.URL)
 			return
@@ -697,7 +698,7 @@ func (a adminAPIHandlers) AddServiceAccount(w http.ResponseWriter, r *http.Reque
 		// In case of LDAP/OIDC we need to set `opts.claims` to ensure
 		// it is associated with the LDAP/OIDC user properly.
 		for k, v := range cred.Claims {
-			if k == expClaim {
+			if k == auth.ClaimExpiry {
 				continue
 			}
 			opts.claims[k] = v
@@ -705,7 +706,7 @@ func (a adminAPIHandlers) AddServiceAccount(w http.ResponseWriter, r *http.Reque
 	} else if globalIAMSys.LDAPConfig.Enabled() {
 		// In case of LDAP we need to resolve the targetUser to a DN and
 		// query their groups:
-		opts.claims[ldapUserN] = targetUser // simple username
+		opts.claims[auth.ClaimLDAPUsername] = targetUser // simple username
 		var lookupResult *xldap.DNSearchResult
 		lookupResult, targetGroups, err = globalIAMSys.LDAPConfig.LookupUserDN(targetUser)
 		if err != nil {
@@ -713,12 +714,12 @@ func (a adminAPIHandlers) AddServiceAccount(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		targetUser = lookupResult.NormDN
-		opts.claims[ldapUser] = targetUser // username DN
-		opts.claims[ldapActualUser] = lookupResult.ActualDN
+		opts.claims[auth.ClaimLDAPUserDN] = targetUser // username DN
+		opts.claims[auth.ClaimLDAPActualUserDN] = lookupResult.ActualDN
 
 		// Add LDAP attributes that were looked up into the claims.
 		for attribKey, attribValue := range lookupResult.Attributes {
-			opts.claims[ldapAttribPrefix+attribKey] = attribValue
+			opts.claims[auth.ClaimLDAPAttributePrefix+attribKey] = attribValue
 		}
 
 		// NOTE: if not using LDAP, then internal IDP or open ID is
@@ -1116,7 +1117,7 @@ func (a adminAPIHandlers) DeleteServiceAccount(w http.ResponseWriter, r *http.Re
 	// We do not care if service account is readable or not at this point,
 	// since this is a delete call we shall allow it to be deleted if possible.
 	svcAccount, _, err := globalIAMSys.GetServiceAccount(ctx, serviceAccount)
-	if errors.Is(err, errNoSuchServiceAccount) {
+	if errors.Is(err, iam.ErrNoSuchServiceAccount) {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrAdminServiceAccountNotFound), r.URL)
 		return
 	}
@@ -1563,7 +1564,7 @@ func (a adminAPIHandlers) InfoCannedPolicy(w http.ResponseWriter, r *http.Reques
 	name := mux.Vars(r)["name"]
 	policies := newMappedPolicy(name).toSlice()
 	if len(policies) != 1 {
-		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errTooManyPolicies), r.URL)
+		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrTooManyPolicies), r.URL)
 		return
 	}
 	setReqInfoPolicyName(ctx, name)
@@ -1779,18 +1780,18 @@ func (a adminAPIHandlers) SetPolicyForUserOrGroup(w http.ResponseWriter, r *http
 
 	if !isGroup {
 		ok, _, err := globalIAMSys.IsTempUser(entityName)
-		if err != nil && err != errNoSuchUser {
+		if err != nil && err != iam.ErrNoSuchUser {
 			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
 			return
 		}
 		if ok {
-			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errIAMActionNotAllowed), r.URL)
+			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrIAMActionNotAllowed), r.URL)
 			return
 		}
 		// When the user is root credential you are not allowed to
 		// add policies for root user.
 		if entityName == globalActiveCred.AccessKey {
-			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errIAMActionNotAllowed), r.URL)
+			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrIAMActionNotAllowed), r.URL)
 			return
 		}
 	}
@@ -1800,7 +1801,7 @@ func (a adminAPIHandlers) SetPolicyForUserOrGroup(w http.ResponseWriter, r *http
 		if globalIAMSys.GetUsersSysType() == MinIOUsersSysType {
 			_, ok := globalIAMSys.GetUser(ctx, entityName)
 			if !ok {
-				writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errNoSuchUser), r.URL)
+				writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrNoSuchUser), r.URL)
 				return
 			}
 		}
@@ -1825,7 +1826,7 @@ func (a adminAPIHandlers) SetPolicyForUserOrGroup(w http.ResponseWriter, r *http
 			if foundGroupDN, underBaseDN, err = globalIAMSys.LDAPConfig.GetValidatedGroupDN(nil, entityName); err != nil {
 				iamLogIf(ctx, err)
 			} else if foundGroupDN == nil || !underBaseDN {
-				err = errNoSuchGroup
+				err = iam.ErrNoSuchGroup
 			} else {
 				entityName = foundGroupDN.NormDN
 			}
@@ -1834,7 +1835,7 @@ func (a adminAPIHandlers) SetPolicyForUserOrGroup(w http.ResponseWriter, r *http
 			if foundUserDN, err = globalIAMSys.LDAPConfig.GetValidatedDNForUsername(entityName); err != nil {
 				iamLogIf(ctx, err)
 			} else if foundUserDN == nil {
-				err = errNoSuchUser
+				err = iam.ErrNoSuchUser
 			} else {
 				entityName = foundUserDN.NormDN
 			}
@@ -1954,11 +1955,11 @@ func (a adminAPIHandlers) AttachDetachPolicyBuiltin(w http.ResponseWriter, r *ht
 
 	updatedAt, addedOrRemoved, _, err := globalIAMSys.PolicyDBUpdateBuiltin(ctx, isAttach, par)
 	if err != nil {
-		if err == errNoSuchUser || err == errNoSuchGroup {
+		if err == iam.ErrNoSuchUser || err == iam.ErrNoSuchGroup {
 			if globalIAMSys.LDAPConfig.Enabled() {
 				// When LDAP is enabled, warn user that they are using the wrong
-				// API. FIXME: error can be no such group as well - fix errNoSuchUserLDAPWarn
-				writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errNoSuchUserLDAPWarn), r.URL)
+				// API. FIXME: error can be no such group as well - fix iam.ErrNoSuchUserLDAPWarn
+				writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrNoSuchUserLDAPWarn), r.URL)
 				return
 			}
 		}
@@ -2052,7 +2053,7 @@ func (a adminAPIHandlers) RevokeTokens(w http.ResponseWriter, r *http.Request) {
 	// Infer token revoke type from the request if requestor is STS.
 	if isTokenSelfRevoke && tokenRevokeType == "" && !fullRevoke {
 		if cred.IsTemp() {
-			tokenRevokeType, _ = cred.Claims[tokenRevokeTypeClaim].(string)
+			tokenRevokeType, _ = cred.Claims[auth.ClaimTokenRevokeType].(string)
 		}
 		if tokenRevokeType == "" {
 			writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrNoTokenRevokeType), r.URL)
@@ -2133,17 +2134,17 @@ func (a adminAPIHandlers) InfoAccessKey(w http.ResponseWriter, r *http.Request) 
 	case targetCred.IsTemp():
 		userType = "STS"
 		_, sessionPolicy, err = globalIAMSys.GetTemporaryAccount(ctx, accessKey)
-		if err == errNoSuchTempAccount {
-			err = errNoSuchAccessKey
+		if err == iam.ErrNoSuchTempAccount {
+			err = iam.ErrNoSuchAccessKey
 		}
 	case targetCred.IsServiceAccount():
 		userType = "Service Account"
 		_, sessionPolicy, err = globalIAMSys.GetServiceAccount(ctx, accessKey)
-		if err == errNoSuchServiceAccount {
-			err = errNoSuchAccessKey
+		if err == iam.ErrNoSuchServiceAccount {
+			err = iam.ErrNoSuchAccessKey
 		}
 	default:
-		err = errNoSuchAccessKey
+		err = iam.ErrNoSuchAccessKey
 	}
 	if err != nil {
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
@@ -2599,7 +2600,7 @@ func (a adminAPIHandlers) importIAM(w http.ResponseWriter, r *http.Request, apiV
 				if _, gerr := globalIAMSys.GetGroupDescription(group); gerr != nil {
 					// If group does not exist, then check if the group has beginning and end space characters
 					// we will reject such group names.
-					if errors.Is(gerr, errNoSuchGroup) && hasSpaceBE(group) {
+					if errors.Is(gerr, iam.ErrNoSuchGroup) && hasSpaceBE(group) {
 						writeErrorResponseJSON(ctx, w, importErrorWithAPIErr(ctx, ErrAdminResourceInvalidArgument, gerr, allGroupsFile, group), r.URL)
 						return
 					}
@@ -2666,7 +2667,7 @@ func (a adminAPIHandlers) importIAM(w http.ResponseWriter, r *http.Request, apiV
 				updateReq := true
 				_, _, err = globalIAMSys.GetServiceAccount(ctx, svcAcctReq.AccessKey)
 				if err != nil {
-					if !errors.Is(err, errNoSuchServiceAccount) {
+					if !errors.Is(err, iam.ErrNoSuchServiceAccount) {
 						writeErrorResponseJSON(ctx, w, importError(ctx, err, allSvcAcctsFile, user), r.URL)
 						return
 					}
@@ -2725,12 +2726,12 @@ func (a adminAPIHandlers) importIAM(w http.ResponseWriter, r *http.Request, apiV
 			for u, pm := range userPolicyMap {
 				// disallow setting policy mapping if user is a temporary user
 				ok, _, err := globalIAMSys.IsTempUser(u)
-				if err != nil && err != errNoSuchUser {
+				if err != nil && err != iam.ErrNoSuchUser {
 					writeErrorResponseJSON(ctx, w, importError(ctx, err, userPolicyMappingsFile, u), r.URL)
 					return
 				}
 				if ok {
-					writeErrorResponseJSON(ctx, w, importError(ctx, errIAMActionNotAllowed, userPolicyMappingsFile, u), r.URL)
+					writeErrorResponseJSON(ctx, w, importError(ctx, iam.ErrIAMActionNotAllowed, userPolicyMappingsFile, u), r.URL)
 					return
 				}
 				if _, err := globalIAMSys.PolicyDBSet(ctx, u, pm.Policies, regUser, false); err != nil {
@@ -2836,12 +2837,12 @@ func (a adminAPIHandlers) importIAM(w http.ResponseWriter, r *http.Request, apiV
 				}
 				// disallow setting policy mapping if user is a temporary user
 				ok, _, err := globalIAMSys.IsTempUser(u)
-				if err != nil && err != errNoSuchUser {
+				if err != nil && err != iam.ErrNoSuchUser {
 					writeErrorResponseJSON(ctx, w, importError(ctx, err, stsUserPolicyMappingsFile, u), r.URL)
 					return
 				}
 				if ok {
-					writeErrorResponseJSON(ctx, w, importError(ctx, errIAMActionNotAllowed, stsUserPolicyMappingsFile, u), r.URL)
+					writeErrorResponseJSON(ctx, w, importError(ctx, iam.ErrIAMActionNotAllowed, stsUserPolicyMappingsFile, u), r.URL)
 					return
 				}
 

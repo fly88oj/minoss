@@ -29,25 +29,24 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/minio/minio/internal/ioutil"
-	"google.golang.org/api/googleapi"
-
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/tags"
 	"github.com/minio/minio/internal/auth"
 	"github.com/minio/minio/internal/bucket/lifecycle"
+	objectlock "github.com/minio/minio/internal/bucket/object/lock"
 	"github.com/minio/minio/internal/bucket/replication"
+	"github.com/minio/minio/internal/bucket/versioning"
 	"github.com/minio/minio/internal/config/dns"
 	"github.com/minio/minio/internal/crypto"
-	"github.com/minio/minio/internal/kms"
-	"github.com/minio/minio/internal/logger"
-
-	objectlock "github.com/minio/minio/internal/bucket/object/lock"
-	"github.com/minio/minio/internal/bucket/versioning"
 	"github.com/minio/minio/internal/event"
 	"github.com/minio/minio/internal/hash"
+	"github.com/minio/minio/internal/iam"
+	"github.com/minio/minio/internal/ioutil"
+	"github.com/minio/minio/internal/kms"
+	"github.com/minio/minio/internal/logger"
 	"github.com/minio/pkg/v3/policy"
+	"google.golang.org/api/googleapi"
 )
 
 // APIError structure
@@ -2156,25 +2155,25 @@ func toAPIErrorCode(ctx context.Context, err error) (apiErr APIErrorCode) {
 	switch err {
 	case errInvalidArgument:
 		apiErr = ErrAdminInvalidArgument
-	case errNoSuchPolicy:
+	case iam.ErrNoSuchPolicy:
 		apiErr = ErrAdminNoSuchPolicy
-	case errNoSuchUser:
+	case iam.ErrNoSuchUser:
 		apiErr = ErrAdminNoSuchUser
-	case errNoSuchUserLDAPWarn:
+	case iam.ErrNoSuchUserLDAPWarn:
 		apiErr = ErrAdminNoSuchUserLDAPWarn
-	case errNoSuchServiceAccount:
+	case iam.ErrNoSuchServiceAccount:
 		apiErr = ErrAdminServiceAccountNotFound
-	case errNoSuchAccessKey:
+	case iam.ErrNoSuchAccessKey:
 		apiErr = ErrAdminNoSuchAccessKey
-	case errNoSuchGroup:
+	case iam.ErrNoSuchGroup:
 		apiErr = ErrAdminNoSuchGroup
-	case errGroupNotEmpty:
+	case iam.ErrGroupNotEmpty:
 		apiErr = ErrAdminGroupNotEmpty
-	case errGroupNameContainsReservedChars:
+	case iam.ErrGroupNameContainsReservedChars:
 		apiErr = ErrAdminInvalidGroupName
 	case errNoSuchJob:
 		apiErr = ErrAdminNoSuchJob
-	case errNoPolicyToAttachOrDetach:
+	case iam.ErrNoPolicyToAttachOrDetach:
 		apiErr = ErrAdminPolicyChangeAlreadyApplied
 	case errSignatureMismatch:
 		apiErr = ErrSignatureDoesNotMatch

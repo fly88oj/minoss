@@ -36,6 +36,7 @@ import (
 	"github.com/minio/minio/internal/config/identity/openid"
 	"github.com/minio/minio/internal/hash/sha256"
 	xhttp "github.com/minio/minio/internal/http"
+	"github.com/minio/minio/internal/iam"
 	"github.com/minio/minio/internal/logger"
 	"github.com/minio/mux"
 	"github.com/minio/pkg/v3/policy"
@@ -66,28 +67,6 @@ const (
 	assumeRole          = "AssumeRole"
 
 	stsRequestBodyLimit = 10 * (1 << 20) // 10 MiB
-
-	// JWT claim keys
-	expClaim = "exp"
-	subClaim = "sub"
-	audClaim = "aud"
-	issClaim = "iss"
-
-	// JWT claim to check the parent user
-	parentClaim = "parent"
-
-	// LDAP claim keys
-	ldapUser       = "ldapUser"       // this is a key name for a normalized DN value
-	ldapActualUser = "ldapActualUser" // this is a key name for the actual DN value
-	ldapUserN      = "ldapUsername"   // this is a key name for the short/login username
-	// Claim key-prefix for LDAP attributes
-	ldapAttribPrefix = "ldapAttrib_"
-
-	// Role Claim key
-	roleArnClaim = "roleArn"
-
-	// STS revoke type claim key
-	tokenRevokeTypeClaim = "tokenRevokeType"
 
 	// maximum supported STS session policy size
 	maxSTSSessionPolicySize = 2048
@@ -125,7 +104,7 @@ func (c stsClaims) populateSessionPolicy(form url.Values) error {
 	// The plain text that you use for both inline and managed session
 	// policies shouldn't exceed maxSTSSessionPolicySize characters.
 	if len(policyBuf) > maxSTSSessionPolicySize {
-		return errSessionPolicyTooLarge
+		return iam.ErrSessionPolicyTooLarge
 	}
 
 	c[policy.SessionPolicyName] = base64.StdEncoding.EncodeToString(policyBuf)
@@ -308,12 +287,12 @@ func (sts *stsAPIHandlers) AssumeRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims[expClaim] = UTCNow().Add(duration).Unix()
-	claims[parentClaim] = user.AccessKey
+	claims[auth.ClaimExpiry] = UTCNow().Add(duration).Unix()
+	claims[auth.ClaimParent] = user.AccessKey
 
 	tokenRevokeType := r.Form.Get(stsRevokeTokenType)
 	if tokenRevokeType != "" {
-		claims[tokenRevokeTypeClaim] = tokenRevokeType
+		claims[auth.ClaimTokenRevokeType] = tokenRevokeType
 	}
 
 	// Validate that user.AccessKey's policies can be retrieved - it may not
@@ -440,7 +419,7 @@ func (sts *stsAPIHandlers) AssumeRoleWithSSO(w http.ResponseWriter, r *http.Requ
 	}
 
 	if !globalIAMSys.Initialized() {
-		writeSTSErrorResponse(ctx, w, ErrSTSIAMNotInitialized, errIAMNotInitialized)
+		writeSTSErrorResponse(ctx, w, ErrSTSIAMNotInitialized, iam.ErrIAMNotInitialized)
 		return
 	}
 
@@ -467,7 +446,7 @@ func (sts *stsAPIHandlers) AssumeRoleWithSSO(w http.ResponseWriter, r *http.Requ
 	if isRolePolicyProvider {
 		// If roleArn is used, we set it as a claim, and use the
 		// associated policy when credentials are used.
-		claims[roleArnClaim] = roleArn.String()
+		claims[auth.ClaimRoleARN] = roleArn.String()
 	} else {
 		// If no role policy is configured, then we use claims from the
 		// JWT. This is a MinIO STS API specific value, this value
@@ -495,7 +474,7 @@ func (sts *stsAPIHandlers) AssumeRoleWithSSO(w http.ResponseWriter, r *http.Requ
 
 	tokenRevokeType := r.Form.Get(stsRevokeTokenType)
 	if tokenRevokeType != "" {
-		claims[tokenRevokeTypeClaim] = tokenRevokeType
+		claims[auth.ClaimTokenRevokeType] = tokenRevokeType
 	}
 
 	if err := claims.populateSessionPolicy(r.Form); err != nil {
@@ -520,7 +499,7 @@ func (sts *stsAPIHandlers) AssumeRoleWithSSO(w http.ResponseWriter, r *http.Requ
 	// parentUser as per the requirements for service accounts for OpenID
 	// based logins.
 	var subFromToken string
-	if v, ok := claims[subClaim]; ok {
+	if v, ok := claims[auth.ClaimSubject]; ok {
 		subFromToken, _ = v.(string)
 	}
 
@@ -531,7 +510,7 @@ func (sts *stsAPIHandlers) AssumeRoleWithSSO(w http.ResponseWriter, r *http.Requ
 	}
 
 	var issFromToken string
-	if v, ok := claims[issClaim]; ok {
+	if v, ok := claims[auth.ClaimIssuer]; ok {
 		issFromToken, _ = v.(string)
 	}
 
@@ -686,7 +665,7 @@ func (sts *stsAPIHandlers) AssumeRoleWithLDAPIdentity(w http.ResponseWriter, r *
 	}
 
 	if !globalIAMSys.Initialized() {
-		writeSTSErrorResponse(ctx, w, ErrSTSIAMNotInitialized, errIAMNotInitialized)
+		writeSTSErrorResponse(ctx, w, ErrSTSIAMNotInitialized, iam.ErrIAMNotInitialized)
 		return
 	}
 
@@ -718,17 +697,17 @@ func (sts *stsAPIHandlers) AssumeRoleWithLDAPIdentity(w http.ResponseWriter, r *
 		return
 	}
 
-	claims[expClaim] = UTCNow().Add(expiryDur).Unix()
-	claims[ldapUser] = ldapUserDN
-	claims[ldapActualUser] = ldapActualUserDN
-	claims[ldapUserN] = ldapUsername
+	claims[auth.ClaimExpiry] = UTCNow().Add(expiryDur).Unix()
+	claims[auth.ClaimLDAPUserDN] = ldapUserDN
+	claims[auth.ClaimLDAPActualUserDN] = ldapActualUserDN
+	claims[auth.ClaimLDAPUsername] = ldapUsername
 	// Add lookup up LDAP attributes as claims.
 	for attrib, value := range lookupResult.Attributes {
-		claims[ldapAttribPrefix+attrib] = value
+		claims[auth.ClaimLDAPAttributePrefix+attrib] = value
 	}
 	tokenRevokeType := r.Form.Get(stsRevokeTokenType)
 	if tokenRevokeType != "" {
-		claims[tokenRevokeTypeClaim] = tokenRevokeType
+		claims[auth.ClaimTokenRevokeType] = tokenRevokeType
 	}
 
 	secret, err := getTokenSigningKey()
@@ -795,7 +774,7 @@ func (sts *stsAPIHandlers) AssumeRoleWithCertificate(w http.ResponseWriter, r *h
 	defer logger.AuditLog(ctx, w, r, claims)
 
 	if !globalIAMSys.Initialized() {
-		writeSTSErrorResponse(ctx, w, ErrSTSIAMNotInitialized, errIAMNotInitialized)
+		writeSTSErrorResponse(ctx, w, ErrSTSIAMNotInitialized, iam.ErrIAMNotInitialized)
 		return
 	}
 
@@ -921,14 +900,14 @@ func (sts *stsAPIHandlers) AssumeRoleWithCertificate(w http.ResponseWriter, r *h
 	// Associate any service accounts to the certificate CN
 	parentUser := "tls" + getKeySeparator() + certificate.Subject.CommonName
 
-	claims[expClaim] = UTCNow().Add(expiry).Unix()
-	claims[subClaim] = certificate.Subject.CommonName
-	claims[audClaim] = certificate.Subject.Organization
-	claims[issClaim] = certificate.Issuer.CommonName
-	claims[parentClaim] = parentUser
+	claims[auth.ClaimExpiry] = UTCNow().Add(expiry).Unix()
+	claims[auth.ClaimSubject] = certificate.Subject.CommonName
+	claims[auth.ClaimAudience] = certificate.Subject.Organization
+	claims[auth.ClaimIssuer] = certificate.Issuer.CommonName
+	claims[auth.ClaimParent] = parentUser
 	tokenRevokeType := r.Form.Get(stsRevokeTokenType)
 	if tokenRevokeType != "" {
-		claims[tokenRevokeTypeClaim] = tokenRevokeType
+		claims[auth.ClaimTokenRevokeType] = tokenRevokeType
 	}
 
 	secretKey, err := getTokenSigningKey()
@@ -983,7 +962,7 @@ func (sts *stsAPIHandlers) AssumeRoleWithCustomToken(w http.ResponseWriter, r *h
 	defer logger.AuditLog(ctx, w, r, claims, auditLogFilterKeys...)
 
 	if !globalIAMSys.Initialized() {
-		writeSTSErrorResponse(ctx, w, ErrSTSIAMNotInitialized, errIAMNotInitialized)
+		writeSTSErrorResponse(ctx, w, ErrSTSIAMNotInitialized, iam.ErrIAMNotInitialized)
 		return
 	}
 
@@ -1066,13 +1045,13 @@ func (sts *stsAPIHandlers) AssumeRoleWithCustomToken(w http.ResponseWriter, r *h
 	parentUser := "custom" + getKeySeparator() + res.Success.User
 
 	// metadata map
-	claims[expClaim] = UTCNow().Add(time.Duration(expiry) * time.Second).Unix()
-	claims[subClaim] = parentUser
-	claims[roleArnClaim] = roleArn.String()
-	claims[parentClaim] = parentUser
+	claims[auth.ClaimExpiry] = UTCNow().Add(time.Duration(expiry) * time.Second).Unix()
+	claims[auth.ClaimSubject] = parentUser
+	claims[auth.ClaimRoleARN] = roleArn.String()
+	claims[auth.ClaimParent] = parentUser
 	tokenRevokeType := r.Form.Get(stsRevokeTokenType)
 	if tokenRevokeType != "" {
-		claims[tokenRevokeTypeClaim] = tokenRevokeType
+		claims[auth.ClaimTokenRevokeType] = tokenRevokeType
 	}
 
 	// Add all other claims from the plugin **without** replacing any

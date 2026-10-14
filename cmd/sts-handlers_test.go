@@ -34,6 +34,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	cr "github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/minio/minio-go/v7/pkg/set"
+	"github.com/minio/minio/internal/auth"
 	"github.com/minio/pkg/v3/ldap"
 )
 
@@ -2229,7 +2230,7 @@ func (s *TestSuiteIAM) TestLDAPCyrillicUser(c *check) {
 		}
 
 		// Validate claims.
-		dnClaim := claims.MapClaims[ldapActualUser].(string)
+		dnClaim := claims.MapClaims[auth.ClaimLDAPActualUserDN].(string)
 		if dnClaim != testCase.dn {
 			c.Fatalf("Test %d: unexpected dn claim: %s", i+1, dnClaim)
 		}
@@ -2316,7 +2317,7 @@ func (s *TestSuiteIAM) TestLDAPSlashDN(c *check) {
 		}
 
 		// Validate claims.
-		dnClaim := claims.MapClaims[ldapActualUser].(string)
+		dnClaim := claims.MapClaims[auth.ClaimLDAPActualUserDN].(string)
 		if dnClaim != testCase.dn {
 			c.Fatalf("Test %d: unexpected dn claim: %s", i+1, dnClaim)
 		}
@@ -2398,11 +2399,11 @@ func (s *TestSuiteIAM) TestLDAPAttributesLookup(c *check) {
 		}
 
 		// Validate claims. Check if the sshPublicKey claim is present.
-		dnClaim := claims.MapClaims[ldapActualUser].(string)
+		dnClaim := claims.MapClaims[auth.ClaimLDAPActualUserDN].(string)
 		if dnClaim != testCase.dn {
 			c.Fatalf("Test %d: unexpected dn claim: %s", i+1, dnClaim)
 		}
-		sshPublicKeyClaim := claims.MapClaims[ldapAttribPrefix+"sshPublicKey"].([]any)[0].(string)
+		sshPublicKeyClaim := claims.MapClaims[auth.ClaimLDAPAttributePrefix+"sshPublicKey"].([]any)[0].(string)
 		if sshPublicKeyClaim == "" {
 			c.Fatalf("Test %d: expected sshPublicKey claim to be present", i+1)
 		}

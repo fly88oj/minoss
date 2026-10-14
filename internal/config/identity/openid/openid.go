@@ -646,7 +646,7 @@ func (r Config) GetUserIDClaim(cfgName string) string {
 		if pCfg.UserIDClaim != "" {
 			return pCfg.UserIDClaim
 		}
-		return "sub"
+		return auth.ClaimSubject
 	}
 	return "" // an incorrect config should be handled outside this function
 }

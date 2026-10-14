@@ -25,6 +25,7 @@ import (
 
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7/pkg/set"
+	"github.com/minio/minio/internal/auth"
 	"github.com/minio/pkg/v3/policy"
 )
 
@@ -161,14 +162,14 @@ func (a adminAPIHandlers) ListAccessKeysOpenIDBulk(w http.ResponseWriter, r *htt
 
 	for _, accessKey := range accessKeys {
 		// Filter out any disqualifying access keys
-		_, ok := accessKey.Claims[subClaim]
+		_, ok := accessKey.Claims[auth.ClaimSubject]
 		if !ok {
 			continue // OpenID access keys must have a sub claim
 		}
 		if (!listSTSKeys && !accessKey.IsServiceAccount()) || (!listServiceAccounts && accessKey.IsServiceAccount()) {
 			continue // skip if not the type we want
 		}
-		arn, ok := accessKey.Claims[roleArnClaim].(string)
+		arn, ok := accessKey.Claims[auth.ClaimRoleARN].(string)
 		if !ok {
 			if _, ok := accessKey.Claims[iamPolicyClaimNameOpenID()]; !ok {
 				continue // skip if no roleArn and no policy claim

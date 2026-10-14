@@ -104,7 +104,7 @@ var (
 )
 
 func updateClaimsExpiry(dsecs string, claims map[string]any) error {
-	expStr := claims["exp"]
+	expStr := claims[auth.ClaimExpiry]
 	if expStr == "" {
 		return ErrTokenExpired
 	}
@@ -123,12 +123,11 @@ func updateClaimsExpiry(dsecs string, claims map[string]any) error {
 		return err
 	}
 
-	claims["exp"] = time.Now().UTC().Add(defaultExpiryDuration).Unix() // update with new expiry.
+	claims[auth.ClaimExpiry] = time.Now().UTC().Add(defaultExpiryDuration).Unix() // update with new expiry.
 	return nil
 }
 
 const (
-	audClaim = "aud"
 	azpClaim = "azp"
 )
 
@@ -195,7 +194,7 @@ func (r *Config) Validate(ctx context.Context, arn arn.ARN, token, accessToken, 
 	// array of case sensitive strings. In the common special case
 	// when there is one audience, the aud value MAY be a single
 	// case sensitive
-	audValues, ok := policy.GetValuesFromClaims(mclaims, audClaim)
+	audValues, ok := policy.GetValuesFromClaims(mclaims, auth.ClaimAudience)
 	if !ok {
 		return errors.New("STS JWT Token has `aud` claim invalid, `aud` must match configured OpenID Client ID")
 	}

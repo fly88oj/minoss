@@ -886,10 +886,6 @@ func iamPolicyClaimNameOpenID() string {
 	return globalIAMSys.OpenIDConfig.GetIAMPolicyClaimName()
 }
 
-func iamPolicyClaimNameSA() string {
-	return "sa-policy"
-}
-
 // On MinIO a directory object is stored as a regular object with "__XLDIR__" suffix.
 // For ex. "prefix/" is stored as "prefix__XLDIR__"
 func encodeDirObject(object string) string {

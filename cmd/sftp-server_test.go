@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/minio/madmin-go/v3"
+	"github.com/minio/minio/internal/iam"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -118,8 +119,8 @@ func (s *TestSuiteIAM) SFTPFailedPublicKeyAuthenticationInvalidKey(c *check) {
 
 	newSSHCon = newSSHConnMock("dillon")
 	_, err = sshPubKeyAuth(newSSHCon, testKey)
-	if err == nil || !errors.Is(err, errNoSuchUser) {
-		c.Fatalf("expected err(%s) but got (%s)", errNoSuchUser, err)
+	if err == nil || !errors.Is(err, iam.ErrNoSuchUser) {
+		c.Fatalf("expected err(%s) but got (%s)", iam.ErrNoSuchUser, err)
 	}
 }
 
@@ -182,32 +183,32 @@ func (s *TestSuiteIAM) SFTPFailedAuthDueToMissingPolicy(c *check) {
 
 	newSSHCon = newSSHConnMock("dillon")
 	_, err = sshPasswordAuth(newSSHCon, []byte("dillon"))
-	if err == nil || !errors.Is(err, errNoSuchUser) {
-		c.Fatalf("expected err(%s) but got (%s)", errNoSuchUser, err)
+	if err == nil || !errors.Is(err, iam.ErrNoSuchUser) {
+		c.Fatalf("expected err(%s) but got (%s)", iam.ErrNoSuchUser, err)
 	}
 }
 
 func (s *TestSuiteIAM) SFTPFailedAuthDueToInvalidUser(c *check) {
 	newSSHCon := newSSHConnMock("dillon_error")
 	_, err := sshPasswordAuth(newSSHCon, []byte("dillon_error"))
-	if err == nil || !errors.Is(err, errNoSuchUser) {
-		c.Fatalf("expected err(%s) but got (%s)", errNoSuchUser, err)
+	if err == nil || !errors.Is(err, iam.ErrNoSuchUser) {
+		c.Fatalf("expected err(%s) but got (%s)", iam.ErrNoSuchUser, err)
 	}
 }
 
 func (s *TestSuiteIAM) SFTPFailedForcedServiceAccountAuthOnLDAPUser(c *check) {
 	newSSHCon := newSSHConnMock("dillon=svc")
 	_, err := sshPasswordAuth(newSSHCon, []byte("dillon"))
-	if err == nil || !errors.Is(err, errNoSuchUser) {
-		c.Fatalf("expected err(%s) but got (%s)", errNoSuchUser, err)
+	if err == nil || !errors.Is(err, iam.ErrNoSuchUser) {
+		c.Fatalf("expected err(%s) but got (%s)", iam.ErrNoSuchUser, err)
 	}
 }
 
 func (s *TestSuiteIAM) SFTPFailedAuthDueToInvalidPassword(c *check) {
 	newSSHCon := newSSHConnMock("dillon")
 	_, err := sshPasswordAuth(newSSHCon, []byte("dillon_error"))
-	if err == nil || !errors.Is(err, errNoSuchUser) {
-		c.Fatalf("expected err(%s) but got (%s)", errNoSuchUser, err)
+	if err == nil || !errors.Is(err, iam.ErrNoSuchUser) {
+		c.Fatalf("expected err(%s) but got (%s)", iam.ErrNoSuchUser, err)
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio/internal/auth"
+	"github.com/minio/minio/internal/iam"
 )
 
 // getUserWithProvider - returns the appropriate internal username based on the user provider.
@@ -32,29 +33,29 @@ func getUserWithProvider(ctx context.Context, userProvider, user string, validat
 	case madmin.BuiltinProvider:
 		if validate {
 			if _, ok := globalIAMSys.GetUser(ctx, user); !ok {
-				return "", errNoSuchUser
+				return "", iam.ErrNoSuchUser
 			}
 		}
 		return user, nil
 	case madmin.LDAPProvider:
 		if globalIAMSys.GetUsersSysType() != LDAPUsersSysType {
-			return "", errIAMActionNotAllowed
+			return "", iam.ErrIAMActionNotAllowed
 		}
 		res, err := globalIAMSys.LDAPConfig.GetValidatedDNForUsername(user)
 		if res == nil {
-			err = errNoSuchUser
+			err = iam.ErrNoSuchUser
 		}
 		if err != nil {
 			if validate {
 				return "", err
 			}
 			if !globalIAMSys.LDAPConfig.ParsesAsDN(user) {
-				return "", errNoSuchUser
+				return "", iam.ErrNoSuchUser
 			}
 		}
 		return res.NormDN, nil
 	default:
-		return "", errIAMActionNotAllowed
+		return "", iam.ErrIAMActionNotAllowed
 	}
 }
 
@@ -65,11 +66,11 @@ func guessUserProvider(credentials auth.Credentials) string {
 	}
 
 	claims := credentials.Claims
-	if _, ok := claims[ldapUser]; ok {
+	if _, ok := claims[auth.ClaimLDAPUserDN]; ok {
 		return madmin.LDAPProvider // ldap users
 	}
 
-	if _, ok := claims[subClaim]; ok {
+	if _, ok := claims[auth.ClaimSubject]; ok {
 		providerPrefix, _, found := strings.Cut(credentials.ParentUser, getKeySeparator())
 		if found {
 			return providerPrefix // this is true for certificate and custom providers
@@ -92,7 +93,7 @@ func populateProviderInfoFromClaims(claims map[string]any, provider string, resp
 }
 
 func getOpenIDCfgNameFromClaims(claims map[string]any) (string, bool) {
-	roleArn := claims[roleArnClaim]
+	roleArn := claims[auth.ClaimRoleARN]
 
 	s := globalServerConfig.Clone()
 	configs, err := globalIAMSys.OpenIDConfig.GetConfigList(s)
@@ -133,7 +134,7 @@ func getOpenIDInfoFromClaims(claims map[string]any) madmin.OpenIDSpecificAccessK
 func getLDAPInfoFromClaims(claims map[string]any) madmin.LDAPSpecificAccessKeyInfo {
 	info := madmin.LDAPSpecificAccessKeyInfo{}
 
-	if name, ok := claims[ldapUser].(string); ok {
+	if name, ok := claims[auth.ClaimLDAPUserDN].(string); ok {
 		info.Username = name
 	}
 

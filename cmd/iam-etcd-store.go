@@ -28,6 +28,7 @@ import (
 
 	"github.com/minio/minio-go/v7/pkg/set"
 	"github.com/minio/minio/internal/config"
+	"github.com/minio/minio/internal/iam"
 	"github.com/minio/minio/internal/kms"
 	"github.com/puzpuzpuz/xsync/v3"
 	"go.etcd.io/etcd/api/v3/mvccpb"
@@ -149,7 +150,7 @@ func (ies *IAMEtcdStore) loadPolicyDoc(ctx context.Context, policy string, m map
 	data, err := ies.loadIAMConfigBytes(ctx, getPolicyDocPath(policy))
 	if err != nil {
 		if err == errConfigNotFound {
-			return errNoSuchPolicy
+			return iam.ErrNoSuchPolicy
 		}
 		return err
 	}
@@ -168,7 +169,7 @@ func (ies *IAMEtcdStore) getPolicyDocKV(ctx context.Context, kvs *mvccpb.KeyValu
 	data, err := decryptData(kvs.Value, string(kvs.Key))
 	if err != nil {
 		if err == errConfigNotFound {
-			return errNoSuchPolicy
+			return iam.ErrNoSuchPolicy
 		}
 		return err
 	}
@@ -196,7 +197,7 @@ func (ies *IAMEtcdStore) loadPolicyDocs(ctx context.Context, m map[string]Policy
 
 	// Parse all values to construct the policies data model.
 	for _, kvs := range r.Kvs {
-		if err = ies.getPolicyDocKV(ctx, kvs, m); err != nil && !errors.Is(err, errNoSuchPolicy) {
+		if err = ies.getPolicyDocKV(ctx, kvs, m); err != nil && !errors.Is(err, iam.ErrNoSuchPolicy) {
 			return err
 		}
 	}
@@ -208,7 +209,7 @@ func (ies *IAMEtcdStore) getUserKV(ctx context.Context, userkv *mvccpb.KeyValue,
 	err := getIAMConfig(&u, userkv.Value, string(userkv.Key))
 	if err != nil {
 		if err == errConfigNotFound {
-			return errNoSuchUser
+			return iam.ErrNoSuchUser
 		}
 		return err
 	}
@@ -252,7 +253,7 @@ func (ies *IAMEtcdStore) loadSecretKey(ctx context.Context, user string, userTyp
 	err := ies.loadIAMConfig(ctx, &u, getUserIdentityPath(user, userType))
 	if err != nil {
 		if errors.Is(err, errConfigNotFound) {
-			return "", errNoSuchUser
+			return "", iam.ErrNoSuchUser
 		}
 		return "", err
 	}
@@ -264,7 +265,7 @@ func (ies *IAMEtcdStore) loadUser(ctx context.Context, user string, userType IAM
 	err := ies.loadIAMConfig(ctx, &u, getUserIdentityPath(user, userType))
 	if err != nil {
 		if err == errConfigNotFound {
-			return errNoSuchUser
+			return iam.ErrNoSuchUser
 		}
 		return err
 	}
@@ -294,7 +295,7 @@ func (ies *IAMEtcdStore) loadUsers(ctx context.Context, userType IAMUserType, m 
 
 	// Parse all users values to create the proper data model
 	for _, userKv := range r.Kvs {
-		if err = ies.getUserKV(ctx, userKv, userType, m, basePrefix); err != nil && err != errNoSuchUser {
+		if err = ies.getUserKV(ctx, userKv, userType, m, basePrefix); err != nil && err != iam.ErrNoSuchUser {
 			return err
 		}
 	}
@@ -306,7 +307,7 @@ func (ies *IAMEtcdStore) loadGroup(ctx context.Context, group string, m map[stri
 	err := ies.loadIAMConfig(ctx, &gi, getGroupInfoPath(group))
 	if err != nil {
 		if err == errConfigNotFound {
-			return errNoSuchGroup
+			return iam.ErrNoSuchGroup
 		}
 		return err
 	}
@@ -327,7 +328,7 @@ func (ies *IAMEtcdStore) loadGroups(ctx context.Context, m map[string]GroupInfo)
 
 	// Reload config for all groups.
 	for _, group := range groups.ToSlice() {
-		if err = ies.loadGroup(ctx, group, m); err != nil && err != errNoSuchGroup {
+		if err = ies.loadGroup(ctx, group, m); err != nil && err != iam.ErrNoSuchGroup {
 			return err
 		}
 	}
@@ -343,7 +344,7 @@ func (ies *IAMEtcdStore) loadMappedPolicy(ctx context.Context, name string, user
 	err := ies.loadIAMConfig(ctx, &p, getMappedPolicyPath(name, userType, isGroup))
 	if err != nil {
 		if err == errConfigNotFound {
-			return errNoSuchPolicy
+			return iam.ErrNoSuchPolicy
 		}
 		return err
 	}
@@ -356,7 +357,7 @@ func getMappedPolicy(kv *mvccpb.KeyValue, m *xsync.MapOf[string, MappedPolicy], 
 	err := getIAMConfig(&p, kv.Value, string(kv.Key))
 	if err != nil {
 		if err == errConfigNotFound {
-			return errNoSuchPolicy
+			return iam.ErrNoSuchPolicy
 		}
 		return err
 	}
@@ -390,7 +391,7 @@ func (ies *IAMEtcdStore) loadMappedPolicies(ctx context.Context, userType IAMUse
 
 	// Parse all policies mapping to create the proper data model
 	for _, kv := range r.Kvs {
-		if err = getMappedPolicy(kv, m, basePrefix); err != nil && !errors.Is(err, errNoSuchPolicy) {
+		if err = getMappedPolicy(kv, m, basePrefix); err != nil && !errors.Is(err, iam.ErrNoSuchPolicy) {
 			return err
 		}
 	}
@@ -416,7 +417,7 @@ func (ies *IAMEtcdStore) saveGroupInfo(ctx context.Context, name string, gi Grou
 func (ies *IAMEtcdStore) deletePolicyDoc(ctx context.Context, name string) error {
 	err := ies.deleteIAMConfig(ctx, getPolicyDocPath(name))
 	if err == errConfigNotFound {
-		err = errNoSuchPolicy
+		err = iam.ErrNoSuchPolicy
 	}
 	return err
 }
@@ -424,7 +425,7 @@ func (ies *IAMEtcdStore) deletePolicyDoc(ctx context.Context, name string) error
 func (ies *IAMEtcdStore) deleteMappedPolicy(ctx context.Context, name string, userType IAMUserType, isGroup bool) error {
 	err := ies.deleteIAMConfig(ctx, getMappedPolicyPath(name, userType, isGroup))
 	if err == errConfigNotFound {
-		err = errNoSuchPolicy
+		err = iam.ErrNoSuchPolicy
 	}
 	return err
 }
@@ -432,7 +433,7 @@ func (ies *IAMEtcdStore) deleteMappedPolicy(ctx context.Context, name string, us
 func (ies *IAMEtcdStore) deleteUserIdentity(ctx context.Context, name string, userType IAMUserType) error {
 	err := ies.deleteIAMConfig(ctx, getUserIdentityPath(name, userType))
 	if err == errConfigNotFound {
-		err = errNoSuchUser
+		err = iam.ErrNoSuchUser
 	}
 	return err
 }
@@ -440,7 +441,7 @@ func (ies *IAMEtcdStore) deleteUserIdentity(ctx context.Context, name string, us
 func (ies *IAMEtcdStore) deleteGroupInfo(ctx context.Context, name string) error {
 	err := ies.deleteIAMConfig(ctx, getGroupInfoPath(name))
 	if err == errConfigNotFound {
-		err = errNoSuchGroup
+		err = iam.ErrNoSuchGroup
 	}
 	return err
 }

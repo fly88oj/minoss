@@ -99,9 +99,6 @@ var (
 	}
 )
 
-// claim key found in credentials which are service accounts
-const iamPolicyClaimNameSA = "sa-policy"
-
 const (
 	// AccountOn indicates that credentials are enabled
 	AccountOn = "on"
@@ -160,14 +157,14 @@ func (cred Credentials) IsTemp() bool {
 
 // IsServiceAccount - returns whether credential is a service account or not
 func (cred Credentials) IsServiceAccount() bool {
-	_, ok := cred.Claims[iamPolicyClaimNameSA]
+	_, ok := cred.Claims[ClaimServiceAccountPolicy]
 	return cred.ParentUser != "" && ok
 }
 
 // IsImpliedPolicy - returns if the policy is implied via ParentUser or not.
 func (cred Credentials) IsImpliedPolicy() bool {
 	if cred.IsServiceAccount() {
-		return cred.Claims[iamPolicyClaimNameSA] == "inherited-policy"
+		return cred.Claims[ClaimServiceAccountPolicy] == InheritedPolicy
 	}
 	return false
 }
@@ -321,7 +318,7 @@ func CreateNewCredentialsWithMetadata(accessKey, secretKey string, m map[string]
 		return cred, nil
 	}
 
-	expiry, err := ExpToInt64(m["exp"])
+	expiry, err := ExpToInt64(m[ClaimExpiry])
 	if err != nil {
 		return cred, err
 	}
@@ -337,7 +334,7 @@ func CreateNewCredentialsWithMetadata(accessKey, secretKey string, m map[string]
 
 // JWTSignWithAccessKey - generates a session token.
 func JWTSignWithAccessKey(accessKey string, m map[string]any, tokenSecret string) (string, error) {
-	m["accessKey"] = accessKey
+	m[ClaimAccessKey] = accessKey
 	jwt := jwtgo.NewWithClaims(jwtgo.SigningMethodHS512, jwtgo.MapClaims(m))
 	return jwt.SignedString([]byte(tokenSecret))
 }

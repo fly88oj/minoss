@@ -45,6 +45,7 @@ import (
 	"github.com/minio/minio/internal/auth"
 	"github.com/minio/minio/internal/bucket/lifecycle"
 	sreplication "github.com/minio/minio/internal/bucket/replication"
+	"github.com/minio/minio/internal/iam"
 	"github.com/minio/minio/internal/logger"
 	xldap "github.com/minio/pkg/v3/ldap"
 	"github.com/minio/pkg/v3/policy"
@@ -478,7 +479,7 @@ func (c *SiteReplicationSys) AddPeerClusters(ctx context.Context, psites []madmi
 	var svcCred auth.Credentials
 	sa, _, err := globalIAMSys.getServiceAccount(ctx, siteReplicatorSvcAcc)
 	switch err {
-	case errNoSuchServiceAccount:
+	case iam.ErrNoSuchServiceAccount:
 		_, secretKey, err = auth.GenerateCredentials()
 		if err != nil {
 			return madmin.ReplicateAddStatus{}, errSRServiceAccount(fmt.Errorf("unable to create local service account: %w", err))
@@ -624,7 +625,7 @@ func (c *SiteReplicationSys) PeerJoinReq(ctx context.Context, arg madmin.SRPeerJ
 	}
 
 	sa, _, err := globalIAMSys.GetServiceAccount(ctx, arg.SvcAcctAccessKey)
-	if err == errNoSuchServiceAccount {
+	if err == iam.ErrNoSuchServiceAccount {
 		sa, _, err = globalIAMSys.NewServiceAccount(ctx, arg.SvcAcctParent, nil, newServiceAccountOpts{
 			accessKey:                  arg.SvcAcctAccessKey,
 			secretKey:                  arg.SvcAcctSecretKey,
@@ -1276,7 +1277,7 @@ func (c *SiteReplicationSys) PeerIAMUserChangeHandler(ctx context.Context, chang
 			// We don't allow internal user creation with LDAP enabled for now
 			// (both sites must have LDAP disabled).
 			if globalIAMSys.LDAPConfig.Enabled() {
-				err = errIAMActionNotAllowed
+				err = iam.ErrIAMActionNotAllowed
 			} else {
 				_, err = globalIAMSys.CreateUser(ctx, change.AccessKey, userReq)
 			}
@@ -1312,7 +1313,7 @@ func (c *SiteReplicationSys) PeerGroupInfoChangeHandler(ctx context.Context, cha
 			if globalIAMSys.LDAPConfig.Enabled() {
 				// We don't allow internal group manipulation in this API when
 				// LDAP is enabled for now (both sites must have LDAP disabled).
-				err = errIAMActionNotAllowed
+				err = iam.ErrIAMActionNotAllowed
 			} else {
 				_, err = globalIAMSys.AddUsersToGroup(ctx, updReq.Group, updReq.Members)
 			}
@@ -1321,7 +1322,7 @@ func (c *SiteReplicationSys) PeerGroupInfoChangeHandler(ctx context.Context, cha
 			}
 		}
 	}
-	if err != nil && !errors.Is(err, errNoSuchGroup) {
+	if err != nil && !errors.Is(err, iam.ErrNoSuchGroup) {
 		return wrapSRErr(err)
 	}
 	return nil
@@ -1435,7 +1436,7 @@ func (c *SiteReplicationSys) PeerPolicyMappingHandler(ctx context.Context, mappi
 			if foundGroupDN, underBaseDN, err = globalIAMSys.LDAPConfig.GetValidatedGroupDN(nil, entityName); err != nil {
 				iamLogIf(ctx, err)
 			} else if foundGroupDN == nil || !underBaseDN {
-				return wrapSRErr(errNoSuchGroup)
+				return wrapSRErr(iam.ErrNoSuchGroup)
 			}
 			entityName = foundGroupDN.NormDN
 		} else {
@@ -1443,7 +1444,7 @@ func (c *SiteReplicationSys) PeerPolicyMappingHandler(ctx context.Context, mappi
 			if foundUserDN, err = globalIAMSys.LDAPConfig.GetValidatedDNForUsername(entityName); err != nil {
 				iamLogIf(ctx, err)
 			} else if foundUserDN == nil {
-				return wrapSRErr(errNoSuchUser)
+				return wrapSRErr(iam.ErrNoSuchUser)
 			}
 			entityName = foundUserDN.NormDN
 		}
@@ -1484,7 +1485,7 @@ func (c *SiteReplicationSys) PeerSTSAccHandler(ctx context.Context, stsCred *mad
 	}
 
 	mapClaims := claims.Map()
-	expiry, err := auth.ExpToInt64(mapClaims["exp"])
+	expiry, err := auth.ExpToInt64(mapClaims[auth.ClaimExpiry])
 	if err != nil {
 		return fmt.Errorf("Expiry claim was not found: %v: %w", mapClaims, err)
 	}
@@ -1499,7 +1500,7 @@ func (c *SiteReplicationSys) PeerSTSAccHandler(ctx context.Context, stsCred *mad
 	}
 
 	// Extract the username and lookup DN and groups in LDAP.
-	ldapUser, isLDAPSTS := claims.Lookup(ldapUserN)
+	ldapUser, isLDAPSTS := claims.Lookup(auth.ClaimLDAPUsername)
 	if isLDAPSTS {
 		// Need to lookup the groups from LDAP.
 		_, ldapGroups, err := globalIAMSys.LDAPConfig.LookupUserDN(ldapUser)
@@ -5561,7 +5562,7 @@ func (c *SiteReplicationSys) healUsers(ctx context.Context, objAPI ObjectLayer, 
 				// custom auth plugin), so in such cases we apply no parent
 				// policy. The session token will contain info about policy to
 				// be applied.
-				if !errors.Is(err, errNoSuchUser) {
+				if !errors.Is(err, iam.ErrNoSuchUser) {
 					replLogOnceIf(ctx,
 						fmt.Errorf("Unable to heal temporary credentials from peer site %s -> %s : %w", latestPeerName, peerName, err),
 						fmt.Sprintf("heal-user-%s", user))

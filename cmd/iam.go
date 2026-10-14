@@ -46,6 +46,7 @@ import (
 	"github.com/minio/minio/internal/config/policy/opa"
 	polplugin "github.com/minio/minio/internal/config/policy/plugin"
 	xhttp "github.com/minio/minio/internal/http"
+	"github.com/minio/minio/internal/iam"
 	"github.com/minio/minio/internal/jwt"
 	"github.com/minio/minio/internal/logger"
 	"github.com/minio/pkg/v3/env"
@@ -74,9 +75,11 @@ const (
 	statusDisabled = "disabled"
 )
 
+// The service-account policy claim values, shared with internal/auth so the
+// writer and the reader of the claim cannot disagree.
 const (
-	embeddedPolicyType  = "embedded-policy"
-	inheritedPolicyType = "inherited-policy"
+	embeddedPolicyType  = auth.EmbeddedPolicy
+	inheritedPolicyType = auth.InheritedPolicy
 )
 
 const (
@@ -839,7 +842,7 @@ func (sys *IAMSys) ListLDAPUsers(ctx context.Context) (map[string]madmin.UserInf
 	}
 
 	if sys.usersSysType != LDAPUsersSysType {
-		return nil, errIAMActionNotAllowed
+		return nil, iam.ErrIAMActionNotAllowed
 	}
 
 	select {
@@ -919,7 +922,7 @@ func (sys *IAMSys) QueryLDAPPolicyEntities(ctx context.Context, q madmin.PolicyE
 	}
 
 	if !sys.LDAPConfig.Enabled() {
-		return nil, errIAMActionNotAllowed
+		return nil, iam.ErrIAMActionNotAllowed
 	}
 
 	select {
@@ -941,7 +944,7 @@ func (sys *IAMSys) IsTempUser(name string) (bool, string, error) {
 
 	u, found := sys.store.GetUser(name)
 	if !found {
-		return false, "", errNoSuchUser
+		return false, "", iam.ErrNoSuchUser
 	}
 	cred := u.Credentials
 	if cred.IsTemp() {
@@ -959,7 +962,7 @@ func (sys *IAMSys) IsServiceAccount(name string) (bool, string, error) {
 
 	u, found := sys.store.GetUser(name)
 	if !found {
-		return false, "", errNoSuchUser
+		return false, "", iam.ErrNoSuchUser
 	}
 	cred := u.Credentials
 	if cred.IsServiceAccount() {
@@ -984,7 +987,7 @@ func (sys *IAMSys) GetUserInfo(ctx context.Context, name string) (u madmin.UserI
 	}
 
 	userInfo, err := sys.store.GetUserInfo(name)
-	if err == errNoSuchUser && !loadUserCalled {
+	if err == iam.ErrNoSuchUser && !loadUserCalled {
 		sys.store.LoadUser(ctx, name)
 		userInfo, err = sys.store.GetUserInfo(name)
 	}
@@ -1024,7 +1027,7 @@ func (sys *IAMSys) SetUserStatus(ctx context.Context, accessKey string, status m
 	}
 
 	if sys.usersSysType != MinIOUsersSysType {
-		return updatedAt, errIAMActionNotAllowed
+		return updatedAt, iam.ErrIAMActionNotAllowed
 	}
 
 	updatedAt, err = sys.store.SetUserStatus(ctx, accessKey, status)
@@ -1087,26 +1090,26 @@ func (sys *IAMSys) NewServiceAccount(ctx context.Context, parentUser string, gro
 			return auth.Credentials{}, time.Time{}, err
 		}
 		if len(policyBuf) > maxSVCSessionPolicySize {
-			return auth.Credentials{}, time.Time{}, errSessionPolicyTooLarge
+			return auth.Credentials{}, time.Time{}, iam.ErrSessionPolicyTooLarge
 		}
 	}
 
 	// found newly requested service account, to be same as
 	// parentUser, reject such operations.
 	if parentUser == opts.accessKey {
-		return auth.Credentials{}, time.Time{}, errIAMActionNotAllowed
+		return auth.Credentials{}, time.Time{}, iam.ErrIAMActionNotAllowed
 	}
 	if siteReplicatorSvcAcc == opts.accessKey && !opts.allowSiteReplicatorAccount {
-		return auth.Credentials{}, time.Time{}, errIAMActionNotAllowed
+		return auth.Credentials{}, time.Time{}, iam.ErrIAMActionNotAllowed
 	}
 	m := make(map[string]any)
-	m[parentClaim] = parentUser
+	m[auth.ClaimParent] = parentUser
 
 	if len(policyBuf) > 0 {
 		m[policy.SessionPolicyName] = base64.StdEncoding.EncodeToString(policyBuf)
-		m[iamPolicyClaimNameSA()] = embeddedPolicyType
+		m[auth.ClaimServiceAccountPolicy] = embeddedPolicyType
 	} else {
-		m[iamPolicyClaimNameSA()] = inheritedPolicyType
+		m[auth.ClaimServiceAccountPolicy] = inheritedPolicyType
 	}
 
 	// Add all the necessary claims for the service account.
@@ -1248,18 +1251,18 @@ func (sys *IAMSys) GetServiceAccount(ctx context.Context, accessKey string) (aut
 func (sys *IAMSys) getServiceAccount(ctx context.Context, accessKey string) (UserIdentity, *policy.Policy, error) {
 	sa, jwtClaims, err := sys.getAccountWithClaims(ctx, accessKey)
 	if err != nil {
-		if err == errNoSuchAccount {
-			return UserIdentity{}, nil, errNoSuchServiceAccount
+		if err == iam.ErrNoSuchAccount {
+			return UserIdentity{}, nil, iam.ErrNoSuchServiceAccount
 		}
 		return UserIdentity{}, nil, err
 	}
 	if !sa.Credentials.IsServiceAccount() {
-		return UserIdentity{}, nil, errNoSuchServiceAccount
+		return UserIdentity{}, nil, iam.ErrNoSuchServiceAccount
 	}
 
 	var embeddedPolicy *policy.Policy
 
-	pt, ptok := jwtClaims.Lookup(iamPolicyClaimNameSA())
+	pt, ptok := jwtClaims.Lookup(auth.ClaimServiceAccountPolicy)
 	sp, spok := jwtClaims.Lookup(policy.SessionPolicyName)
 	if ptok && spok && pt == embeddedPolicyType {
 		policyBytes, err := base64.StdEncoding.DecodeString(sp)
@@ -1282,7 +1285,7 @@ func (sys *IAMSys) GetTemporaryAccount(ctx context.Context, accessKey string) (a
 	}
 	tmpAcc, embeddedPolicy, err := sys.getTempAccount(ctx, accessKey)
 	if err != nil {
-		if err == errNoSuchTempAccount {
+		if err == iam.ErrNoSuchTempAccount {
 			sys.store.LoadUser(ctx, accessKey)
 			tmpAcc, embeddedPolicy, err = sys.getTempAccount(ctx, accessKey)
 		}
@@ -1299,13 +1302,13 @@ func (sys *IAMSys) GetTemporaryAccount(ctx context.Context, accessKey string) (a
 func (sys *IAMSys) getTempAccount(ctx context.Context, accessKey string) (UserIdentity, *policy.Policy, error) {
 	tmpAcc, claims, err := sys.getAccountWithClaims(ctx, accessKey)
 	if err != nil {
-		if err == errNoSuchAccount {
-			return UserIdentity{}, nil, errNoSuchTempAccount
+		if err == iam.ErrNoSuchAccount {
+			return UserIdentity{}, nil, iam.ErrNoSuchTempAccount
 		}
 		return UserIdentity{}, nil, err
 	}
 	if !tmpAcc.Credentials.IsTemp() {
-		return UserIdentity{}, nil, errNoSuchTempAccount
+		return UserIdentity{}, nil, iam.ErrNoSuchTempAccount
 	}
 
 	var embeddedPolicy *policy.Policy
@@ -1333,7 +1336,7 @@ func (sys *IAMSys) getAccountWithClaims(ctx context.Context, accessKey string) (
 
 	acc, ok := sys.store.GetUser(accessKey)
 	if !ok {
-		return UserIdentity{}, nil, errNoSuchAccount
+		return UserIdentity{}, nil, iam.ErrNoSuchAccount
 	}
 
 	jwtClaims, err := extractJWTClaims(acc)
@@ -1352,7 +1355,7 @@ func (sys *IAMSys) GetClaimsForSvcAcc(ctx context.Context, accessKey string) (ma
 
 	sa, ok := sys.store.GetUser(accessKey)
 	if !ok || !sa.Credentials.IsServiceAccount() {
-		return nil, errNoSuchServiceAccount
+		return nil, iam.ErrNoSuchServiceAccount
 	}
 
 	jwtClaims, err := extractJWTClaims(sa)
@@ -1425,7 +1428,7 @@ func (sys *IAMSys) SetUserSecretKey(ctx context.Context, accessKey string, secre
 	}
 
 	if sys.usersSysType != MinIOUsersSysType {
-		return errIAMActionNotAllowed
+		return iam.ErrIAMActionNotAllowed
 	}
 
 	if !auth.IsAccessKeyValid(accessKey) {
@@ -1561,8 +1564,8 @@ func (sys *IAMSys) updateGroupMembershipsForLDAP(ctx context.Context) {
 				continue
 			}
 
-			ldapUsername, okUserN := jwtClaims.Lookup(ldapUserN)
-			ldapActualDN, okDN := jwtClaims.Lookup(ldapActualUser)
+			ldapUsername, okUserN := jwtClaims.Lookup(auth.ClaimLDAPUsername)
+			ldapActualDN, okDN := jwtClaims.Lookup(auth.ClaimLDAPActualUserDN)
 			if !okUserN || !okDN {
 				// skip this cred - we dont have the
 				// username info needed
@@ -1869,7 +1872,7 @@ func (sys *IAMSys) CheckKey(ctx context.Context, accessKey string) (u UserIdenti
 		iamLogOnceIf(ctx, err, accessKey)
 
 		// return 503 to application
-		return u, false, errIAMNotInitialized
+		return u, false, iam.ErrIAMNotInitialized
 	}
 
 	return u, ok && u.Credentials.IsValid(), nil
@@ -1901,7 +1904,7 @@ func (sys *IAMSys) AddUsersToGroup(ctx context.Context, group string, members []
 	}
 
 	if auth.ContainsReservedChars(group) {
-		return updatedAt, errGroupNameContainsReservedChars
+		return updatedAt, iam.ErrGroupNameContainsReservedChars
 	}
 
 	updatedAt, err = sys.store.AddUsersToGroup(ctx, group, members)
@@ -1921,7 +1924,7 @@ func (sys *IAMSys) RemoveUsersFromGroup(ctx context.Context, group string, membe
 	}
 
 	if sys.usersSysType != MinIOUsersSysType {
-		return updatedAt, errIAMActionNotAllowed
+		return updatedAt, iam.ErrIAMActionNotAllowed
 	}
 
 	updatedAt, err = sys.store.RemoveUsersFromGroup(ctx, group, members)
@@ -1940,7 +1943,7 @@ func (sys *IAMSys) SetGroupStatus(ctx context.Context, group string, enabled boo
 	}
 
 	if sys.usersSysType != MinIOUsersSysType {
-		return updatedAt, errIAMActionNotAllowed
+		return updatedAt, iam.ErrIAMActionNotAllowed
 	}
 
 	updatedAt, err = sys.store.SetGroupStatus(ctx, group, enabled)
@@ -2026,18 +2029,18 @@ func (sys *IAMSys) PolicyDBUpdateBuiltin(ctx context.Context, isAttach bool,
 	} else {
 		var isTemp bool
 		isTemp, _, err = sys.IsTempUser(userOrGroup)
-		if err != nil && err != errNoSuchUser {
+		if err != nil && err != iam.ErrNoSuchUser {
 			return updatedAt, addedOrRemoved, effectivePolicies, err
 		}
 		if isTemp {
-			err = errIAMActionNotAllowed
+			err = iam.ErrIAMActionNotAllowed
 			return updatedAt, addedOrRemoved, effectivePolicies, err
 		}
 
 		// When the user is root credential you are not allowed to
 		// add policies for root user.
 		if userOrGroup == globalActiveCred.AccessKey {
-			err = errIAMActionNotAllowed
+			err = iam.ErrIAMActionNotAllowed
 			return updatedAt, addedOrRemoved, effectivePolicies, err
 		}
 
@@ -2045,7 +2048,7 @@ func (sys *IAMSys) PolicyDBUpdateBuiltin(ctx context.Context, isAttach bool,
 		var userExists bool
 		_, userExists = sys.GetUser(ctx, userOrGroup)
 		if !userExists {
-			err = errNoSuchUser
+			err = iam.ErrNoSuchUser
 			return updatedAt, addedOrRemoved, effectivePolicies, err
 		}
 	}
@@ -2104,7 +2107,7 @@ func (sys *IAMSys) PolicyDBUpdateLDAP(ctx context.Context, isAttach bool,
 			if !isAttach && sys.LDAPConfig.IsLDAPUserDN(r.User) {
 				dn = sys.LDAPConfig.QuickNormalizeDN(r.User)
 			} else {
-				err = errNoSuchUser
+				err = iam.ErrNoSuchUser
 				return updatedAt, addedOrRemoved, effectivePolicies, err
 			}
 		} else {
@@ -2121,7 +2124,7 @@ func (sys *IAMSys) PolicyDBUpdateLDAP(ctx context.Context, isAttach bool,
 			if !isAttach {
 				dn = sys.LDAPConfig.QuickNormalizeDN(r.Group)
 			} else {
-				err = errNoSuchGroup
+				err = iam.ErrNoSuchGroup
 				return updatedAt, addedOrRemoved, effectivePolicies, err
 			}
 		} else {
@@ -2192,7 +2195,7 @@ const sessionPolicyNameExtracted = policy.SessionPolicyName + "-extracted"
 // actions. The permission of the parent user is checked first
 func (sys *IAMSys) IsAllowedServiceAccount(args policy.Args, parentUser string) bool {
 	// Verify if the parent claim matches the parentUser.
-	p, ok := args.Claims[parentClaim]
+	p, ok := args.Claims[auth.ClaimParent]
 	if ok {
 		parentInClaim, ok := p.(string)
 		if !ok {
@@ -2263,7 +2266,7 @@ func (sys *IAMSys) IsAllowedServiceAccount(args policy.Args, parentUser string) 
 	parentArgs := args
 	parentArgs.AccountName = parentUser
 
-	saPolicyClaim, ok := args.Claims[iamPolicyClaimNameSA()]
+	saPolicyClaim, ok := args.Claims[auth.ClaimServiceAccountPolicy]
 	if !ok {
 		return false
 	}

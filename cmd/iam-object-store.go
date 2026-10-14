@@ -32,6 +32,7 @@ import (
 
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio/internal/config"
+	"github.com/minio/minio/internal/iam"
 	xioutil "github.com/minio/minio/internal/ioutil"
 	"github.com/minio/minio/internal/kms"
 	"github.com/minio/minio/internal/logger"
@@ -153,7 +154,7 @@ func (iamOS *IAMObjectStore) loadPolicyDocWithRetry(ctx context.Context, policy 
 		data, objInfo, err := iamOS.loadIAMConfigBytesWithMetadata(ctx, getPolicyDocPath(policy))
 		if err != nil {
 			if err == errConfigNotFound {
-				return errNoSuchPolicy
+				return iam.ErrNoSuchPolicy
 			}
 			retries--
 			if retries <= 0 {
@@ -188,7 +189,7 @@ func (iamOS *IAMObjectStore) loadPolicy(ctx context.Context, policy string) (Pol
 	data, objInfo, err := iamOS.loadIAMConfigBytesWithMetadata(ctx, getPolicyDocPath(policy))
 	if err != nil {
 		if err == errConfigNotFound {
-			return p, errNoSuchPolicy
+			return p, iam.ErrNoSuchPolicy
 		}
 		return p, err
 	}
@@ -227,7 +228,7 @@ func (iamOS *IAMObjectStore) loadPolicyDocs(ctx context.Context, m map[string]Po
 		}
 
 		policyName := path.Dir(item.Item)
-		if err := iamOS.loadPolicyDoc(ctx, policyName, m); err != nil && !errors.Is(err, errNoSuchPolicy) {
+		if err := iamOS.loadPolicyDoc(ctx, policyName, m); err != nil && !errors.Is(err, iam.ErrNoSuchPolicy) {
 			return err
 		}
 	}
@@ -239,7 +240,7 @@ func (iamOS *IAMObjectStore) loadSecretKey(ctx context.Context, user string, use
 	err := iamOS.loadIAMConfig(ctx, &u, getUserIdentityPath(user, userType))
 	if err != nil {
 		if errors.Is(err, errConfigNotFound) {
-			return "", errNoSuchUser
+			return "", iam.ErrNoSuchUser
 		}
 		return "", err
 	}
@@ -251,7 +252,7 @@ func (iamOS *IAMObjectStore) loadUserIdentity(ctx context.Context, user string, 
 	err := iamOS.loadIAMConfig(ctx, &u, getUserIdentityPath(user, userType))
 	if err != nil {
 		if err == errConfigNotFound {
-			return u, errNoSuchUser
+			return u, iam.ErrNoSuchUser
 		}
 		return u, err
 	}
@@ -260,7 +261,7 @@ func (iamOS *IAMObjectStore) loadUserIdentity(ctx context.Context, user string, 
 		// Delete expired identity - ignoring errors here.
 		iamOS.deleteIAMConfig(ctx, getUserIdentityPath(user, userType))
 		iamOS.deleteIAMConfig(ctx, getMappedPolicyPath(user, userType, false))
-		return u, errNoSuchUser
+		return u, iam.ErrNoSuchUser
 	}
 
 	if u.Credentials.AccessKey == "" {
@@ -276,7 +277,7 @@ func (iamOS *IAMObjectStore) loadUserIdentity(ctx context.Context, user string, 
 				iamOS.deleteIAMConfig(ctx, getUserIdentityPath(user, userType))
 				iamOS.deleteIAMConfig(ctx, getMappedPolicyPath(user, userType, false))
 			}
-			return u, errNoSuchUser
+			return u, iam.ErrNoSuchUser
 		}
 		u.Credentials.Claims = jwtClaims.Map()
 	}
@@ -296,7 +297,7 @@ func (iamOS *IAMObjectStore) loadUserConcurrent(ctx context.Context, userType IA
 		g.Go(func() error {
 			userName := path.Dir(users[index])
 			user, err := iamOS.loadUserIdentity(ctx, userName, userType)
-			if err != nil && !errors.Is(err, errNoSuchUser) {
+			if err != nil && !errors.Is(err, iam.ErrNoSuchUser) {
 				return fmt.Errorf("unable to load the user `%s`: %w", userName, err)
 			}
 			userIdentities[index] = user
@@ -336,7 +337,7 @@ func (iamOS *IAMObjectStore) loadUsers(ctx context.Context, userType IAMUserType
 		}
 
 		userName := path.Dir(item.Item)
-		if err := iamOS.loadUser(ctx, userName, userType, m); err != nil && err != errNoSuchUser {
+		if err := iamOS.loadUser(ctx, userName, userType, m); err != nil && err != iam.ErrNoSuchUser {
 			return err
 		}
 	}
@@ -348,7 +349,7 @@ func (iamOS *IAMObjectStore) loadGroup(ctx context.Context, group string, m map[
 	err := iamOS.loadIAMConfig(ctx, &g, getGroupInfoPath(group))
 	if err != nil {
 		if err == errConfigNotFound {
-			return errNoSuchGroup
+			return iam.ErrNoSuchGroup
 		}
 		return err
 	}
@@ -365,7 +366,7 @@ func (iamOS *IAMObjectStore) loadGroups(ctx context.Context, m map[string]GroupI
 		}
 
 		group := path.Dir(item.Item)
-		if err := iamOS.loadGroup(ctx, group, m); err != nil && err != errNoSuchGroup {
+		if err := iamOS.loadGroup(ctx, group, m); err != nil && err != iam.ErrNoSuchGroup {
 			return err
 		}
 	}
@@ -379,7 +380,7 @@ func (iamOS *IAMObjectStore) loadMappedPolicyWithRetry(ctx context.Context, name
 		err := iamOS.loadIAMConfig(ctx, &p, getMappedPolicyPath(name, userType, isGroup))
 		if err != nil {
 			if err == errConfigNotFound {
-				return errNoSuchPolicy
+				return iam.ErrNoSuchPolicy
 			}
 			retries--
 			if retries <= 0 {
@@ -399,7 +400,7 @@ func (iamOS *IAMObjectStore) loadMappedPolicyInternal(ctx context.Context, name 
 	err := iamOS.loadIAMConfig(ctx, &p, getMappedPolicyPath(name, userType, isGroup))
 	if err != nil {
 		if err == errConfigNotFound {
-			return p, errNoSuchPolicy
+			return p, iam.ErrNoSuchPolicy
 		}
 		return p, err
 	}
@@ -414,7 +415,7 @@ func (iamOS *IAMObjectStore) loadMappedPolicyConcurrent(ctx context.Context, use
 		g.Go(func() error {
 			userName := strings.TrimSuffix(users[index], ".json")
 			userMP, err := iamOS.loadMappedPolicyInternal(ctx, userName, userType, isGroup)
-			if err != nil && !errors.Is(err, errNoSuchPolicy) {
+			if err != nil && !errors.Is(err, iam.ErrNoSuchPolicy) {
 				return fmt.Errorf("unable to load the user policy map `%s`: %w", userName, err)
 			}
 			mappedPolicies[index] = userMP
@@ -458,7 +459,7 @@ func (iamOS *IAMObjectStore) loadMappedPolicies(ctx context.Context, userType IA
 
 		policyFile := item.Item
 		userOrGroupName := strings.TrimSuffix(policyFile, ".json")
-		if err := iamOS.loadMappedPolicy(ctx, userOrGroupName, userType, isGroup, m); err != nil && !errors.Is(err, errNoSuchPolicy) {
+		if err := iamOS.loadMappedPolicy(ctx, userOrGroupName, userType, isGroup, m); err != nil && !errors.Is(err, iam.ErrNoSuchPolicy) {
 			return err
 		}
 	}
@@ -538,7 +539,7 @@ func (iamOS *IAMObjectStore) loadPolicyDocConcurrent(ctx context.Context, polici
 		g.Go(func() error {
 			policyName := path.Dir(policies[index])
 			policyDoc, err := iamOS.loadPolicy(ctx, policyName)
-			if err != nil && !errors.Is(err, errNoSuchPolicy) {
+			if err != nil && !errors.Is(err, iam.ErrNoSuchPolicy) {
 				return fmt.Errorf("unable to load the policy doc `%s`: %w", policyName, err)
 			}
 			policyDocs[index] = policyDoc
@@ -666,7 +667,7 @@ func (iamOS *IAMObjectStore) loadAllFromObjStore(ctx context.Context, cache *iam
 		groupsList := listedConfigItems[groupsListKey]
 		for _, item := range groupsList {
 			group := path.Dir(item)
-			if err := iamOS.loadGroup(ctx, group, cache.iamGroupsMap); err != nil && err != errNoSuchGroup {
+			if err := iamOS.loadGroup(ctx, group, cache.iamGroupsMap); err != nil && err != iam.ErrNoSuchGroup {
 				return fmt.Errorf("unable to load the group: %w", err)
 			}
 		}
@@ -719,7 +720,7 @@ func (iamOS *IAMObjectStore) loadAllFromObjStore(ctx context.Context, cache *iam
 	groupPolicyMappingsList := listedConfigItems[policyDBGroupsListKey]
 	for _, item := range groupPolicyMappingsList {
 		groupName := strings.TrimSuffix(item, ".json")
-		if err := iamOS.loadMappedPolicy(ctx, groupName, regUser, true, cache.iamGroupPolicyMap); err != nil && !errors.Is(err, errNoSuchPolicy) {
+		if err := iamOS.loadMappedPolicy(ctx, groupName, regUser, true, cache.iamGroupPolicyMap); err != nil && !errors.Is(err, iam.ErrNoSuchPolicy) {
 			return fmt.Errorf("unable to load the policy mapping for the group: %w", err)
 		}
 	}
@@ -733,7 +734,7 @@ func (iamOS *IAMObjectStore) loadAllFromObjStore(ctx context.Context, cache *iam
 	svcUsersMap := make(map[string]UserIdentity, len(svcAccList))
 	for _, item := range svcAccList {
 		userName := path.Dir(item)
-		if err := iamOS.loadUser(ctx, userName, svcUser, svcUsersMap); err != nil && err != errNoSuchUser {
+		if err := iamOS.loadUser(ctx, userName, svcUser, svcUsersMap); err != nil && err != iam.ErrNoSuchUser {
 			return fmt.Errorf("unable to load the service account: %w", err)
 		}
 	}
@@ -762,7 +763,7 @@ func (iamOS *IAMObjectStore) loadAllFromObjStore(ctx context.Context, cache *iam
 			// not have a policy mapped via its parent (for e.g. in
 			// OIDC/AssumeRoleWithCustomToken/AssumeRoleWithCertificate).
 			err := iamOS.loadMappedPolicy(ctx, svcParent, stsUser, false, cache.iamSTSPolicyMap)
-			if err != nil && !errors.Is(err, errNoSuchPolicy) {
+			if err != nil && !errors.Is(err, iam.ErrNoSuchPolicy) {
 				return fmt.Errorf("unable to load the policy mapping for the STS user: %w", err)
 			}
 		}
@@ -787,7 +788,7 @@ func (iamOS *IAMObjectStore) loadAllFromObjStore(ctx context.Context, cache *iam
 		userName := path.Dir(item)
 		// loadUser() will delete expired user during the load.
 		err := iamOS.loadUser(ctx, userName, stsUser, stsAccountsFromStore)
-		if err != nil && !errors.Is(err, errNoSuchUser) {
+		if err != nil && !errors.Is(err, iam.ErrNoSuchUser) {
 			iamLogIf(ctx, err)
 		}
 		// No need to return errors for failed expiration of STS users
@@ -798,7 +799,7 @@ func (iamOS *IAMObjectStore) loadAllFromObjStore(ctx context.Context, cache *iam
 	for _, item := range listedConfigItems[policyDBSTSUsersListKey] {
 		stsName := strings.TrimSuffix(item, ".json")
 		err := iamOS.loadMappedPolicy(ctx, stsName, stsUser, false, stsAccPoliciesFromStore)
-		if err != nil && !errors.Is(err, errNoSuchPolicy) {
+		if err != nil && !errors.Is(err, iam.ErrNoSuchPolicy) {
 			iamLogIf(ctx, err)
 		}
 		// No need to return errors for failed expiration of STS users
@@ -841,7 +842,7 @@ func (iamOS *IAMObjectStore) saveGroupInfo(ctx context.Context, name string, gi 
 func (iamOS *IAMObjectStore) deletePolicyDoc(ctx context.Context, name string) error {
 	err := iamOS.deleteIAMConfig(ctx, getPolicyDocPath(name))
 	if err == errConfigNotFound {
-		err = errNoSuchPolicy
+		err = iam.ErrNoSuchPolicy
 	}
 	return err
 }
@@ -849,7 +850,7 @@ func (iamOS *IAMObjectStore) deletePolicyDoc(ctx context.Context, name string) e
 func (iamOS *IAMObjectStore) deleteMappedPolicy(ctx context.Context, name string, userType IAMUserType, isGroup bool) error {
 	err := iamOS.deleteIAMConfig(ctx, getMappedPolicyPath(name, userType, isGroup))
 	if err == errConfigNotFound {
-		err = errNoSuchPolicy
+		err = iam.ErrNoSuchPolicy
 	}
 	return err
 }
@@ -857,7 +858,7 @@ func (iamOS *IAMObjectStore) deleteMappedPolicy(ctx context.Context, name string
 func (iamOS *IAMObjectStore) deleteUserIdentity(ctx context.Context, name string, userType IAMUserType) error {
 	err := iamOS.deleteIAMConfig(ctx, getUserIdentityPath(name, userType))
 	if err == errConfigNotFound {
-		err = errNoSuchUser
+		err = iam.ErrNoSuchUser
 	}
 	return err
 }
@@ -865,7 +866,7 @@ func (iamOS *IAMObjectStore) deleteUserIdentity(ctx context.Context, name string
 func (iamOS *IAMObjectStore) deleteGroupInfo(ctx context.Context, name string) error {
 	err := iamOS.deleteIAMConfig(ctx, getGroupInfoPath(name))
 	if err == errConfigNotFound {
-		err = errNoSuchGroup
+		err = iam.ErrNoSuchGroup
 	}
 	return err
 }

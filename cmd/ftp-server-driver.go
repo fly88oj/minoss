@@ -35,6 +35,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/minio/minio/internal/auth"
+	"github.com/minio/minio/internal/iam"
 	xioutil "github.com/minio/minio/internal/ioutil"
 	"github.com/minio/pkg/v3/mimedb"
 	ftp "goftp.io/server/v2"
@@ -266,10 +267,10 @@ func (driver *ftpDriver) CheckPasswd(c *ftp.Context, username, password string) 
 
 	if globalIAMSys.LDAPConfig.Enabled() {
 		sa, _, err := globalIAMSys.getServiceAccount(context.Background(), username)
-		if err != nil && !errors.Is(err, errNoSuchServiceAccount) {
+		if err != nil && !errors.Is(err, iam.ErrNoSuchServiceAccount) {
 			return false, err
 		}
-		if errors.Is(err, errNoSuchServiceAccount) {
+		if errors.Is(err, iam.ErrNoSuchServiceAccount) {
 			lookupRes, groupDistNames, err := globalIAMSys.LDAPConfig.Bind(username, password)
 			if err != nil {
 				return false, err
@@ -294,16 +295,16 @@ func (driver *ftpDriver) getMinIOClient(ctx *ftp.Context) (*minio.Client, error)
 	}
 	ui, ok := globalIAMSys.GetUser(context.Background(), ctx.Sess.LoginUser())
 	if !ok && !globalIAMSys.LDAPConfig.Enabled() {
-		return nil, errNoSuchUser
+		return nil, iam.ErrNoSuchUser
 	}
 	if !ok && globalIAMSys.LDAPConfig.Enabled() {
 		sa, _, err := globalIAMSys.getServiceAccount(context.Background(), ctx.Sess.LoginUser())
-		if err != nil && !errors.Is(err, errNoSuchServiceAccount) {
+		if err != nil && !errors.Is(err, iam.ErrNoSuchServiceAccount) {
 			return nil, err
 		}
 
 		var mcreds *credentials.Credentials
-		if errors.Is(err, errNoSuchServiceAccount) {
+		if errors.Is(err, iam.ErrNoSuchServiceAccount) {
 			lookupResult, targetGroups, err := globalIAMSys.LDAPConfig.LookupUserDN(ctx.Sess.LoginUser())
 			if err != nil {
 				return nil, err
@@ -317,15 +318,15 @@ func (driver *ftpDriver) getMinIOClient(ctx *ftp.Context) (*minio.Client, error)
 				return nil, err
 			}
 			claims := make(map[string]any)
-			claims[expClaim] = UTCNow().Add(expiryDur).Unix()
+			claims[auth.ClaimExpiry] = UTCNow().Add(expiryDur).Unix()
 
-			claims[ldapUser] = lookupResult.NormDN
-			claims[ldapActualUser] = lookupResult.ActualDN
-			claims[ldapUserN] = ctx.Sess.LoginUser()
+			claims[auth.ClaimLDAPUserDN] = lookupResult.NormDN
+			claims[auth.ClaimLDAPActualUserDN] = lookupResult.ActualDN
+			claims[auth.ClaimLDAPUsername] = ctx.Sess.LoginUser()
 
 			// Add LDAP attributes that were looked up into the claims.
 			for attribKey, attribValue := range lookupResult.Attributes {
-				claims[ldapAttribPrefix+attribKey] = attribValue
+				claims[auth.ClaimLDAPAttributePrefix+attribKey] = attribValue
 			}
 
 			cred, err := auth.GetNewCredentialsWithMetadata(claims, globalActiveCred.SecretKey)

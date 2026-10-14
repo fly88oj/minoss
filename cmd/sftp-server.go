@@ -30,6 +30,7 @@ import (
 
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio/internal/auth"
+	"github.com/minio/minio/internal/iam"
 	"github.com/minio/minio/internal/logger"
 	xldap "github.com/minio/pkg/v3/ldap"
 	xsftp "github.com/minio/pkg/v3/sftp"
@@ -158,7 +159,7 @@ func authenticateSSHConnection(c ssh.ConnMetadata, key ssh.PublicKey, pass []byt
 internalAuth:
 	ui, ok := globalIAMSys.GetUser(context.Background(), user)
 	if !ok {
-		return nil, errNoSuchUser
+		return nil, iam.ErrNoSuchUser
 	}
 
 	if globalSFTPTrustedCAPubkey != nil && pass == nil {
@@ -214,7 +215,7 @@ func processLDAPAuthentication(key ssh.PublicKey, pass []byte, user string) (per
 			}, nil
 		}
 
-		if !errors.Is(err, errNoSuchServiceAccount) {
+		if !errors.Is(err, iam.ErrNoSuchServiceAccount) {
 			return nil, err
 		}
 
@@ -230,7 +231,7 @@ func processLDAPAuthentication(key ssh.PublicKey, pass []byte, user string) (per
 	}
 
 	if lookupResult == nil {
-		return nil, errNoSuchUser
+		return nil, iam.ErrNoSuchUser
 	}
 
 	ldapPolicies, _ := globalIAMSys.PolicyDBGet(lookupResult.NormDN, targetGroups...)
@@ -257,13 +258,13 @@ func processLDAPAuthentication(key ssh.PublicKey, pass []byte, user string) (per
 			}
 		}
 		// Save each attribute to claims.
-		claims[ldapAttribPrefix+attribKey] = attribValue[0]
+		claims[auth.ClaimLDAPAttributePrefix+attribKey] = attribValue[0]
 	}
 
 	if key != nil {
 		// If a key was provided, we expect the user to have an sshPublicKey
 		// attribute.
-		if _, ok := claims[ldapAttribPrefix+"sshPublicKey"]; !ok {
+		if _, ok := claims[auth.ClaimLDAPAttributePrefix+"sshPublicKey"]; !ok {
 			return nil, errAuthentication
 		}
 	}
@@ -273,9 +274,9 @@ func processLDAPAuthentication(key ssh.PublicKey, pass []byte, user string) (per
 		return nil, err
 	}
 
-	claims[expClaim] = UTCNow().Add(expiryDur).Unix()
-	claims[ldapUserN] = user
-	claims[ldapUser] = lookupResult.NormDN
+	claims[auth.ClaimExpiry] = UTCNow().Add(expiryDur).Unix()
+	claims[auth.ClaimLDAPUsername] = user
+	claims[auth.ClaimLDAPUserDN] = lookupResult.NormDN
 
 	cred, err := auth.GetNewCredentialsWithMetadata(claims, globalActiveCred.SecretKey)
 	if err != nil {

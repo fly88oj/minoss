@@ -23,6 +23,7 @@ import (
 
 	"github.com/minio/minio/internal/crypto"
 	"github.com/minio/minio/internal/hash"
+	"github.com/minio/minio/internal/iam"
 )
 
 var toAPIErrorTests = []struct {
@@ -57,6 +58,20 @@ var toAPIErrorTests = []struct {
 	{err: crypto.ErrMissingCustomerKeyMD5, errCode: ErrMissingSSECustomerKeyMD5},
 	{err: crypto.ErrCustomerKeyMD5Mismatch, errCode: ErrSSECustomerKeyMD5Mismatch},
 	{err: errObjectTampered, errCode: ErrObjectTampered},
+
+	// The IAM sentinels now live in internal/iam and are matched here by
+	// identity. A dropped case, or a second definition of the same value in
+	// another package, degrades a 4xx into ErrInternalError with no compile
+	// error, so every mapped sentinel is pinned.
+	{err: iam.ErrNoSuchPolicy, errCode: ErrAdminNoSuchPolicy},
+	{err: iam.ErrNoSuchUser, errCode: ErrAdminNoSuchUser},
+	{err: iam.ErrNoSuchUserLDAPWarn, errCode: ErrAdminNoSuchUserLDAPWarn},
+	{err: iam.ErrNoSuchServiceAccount, errCode: ErrAdminServiceAccountNotFound},
+	{err: iam.ErrNoSuchAccessKey, errCode: ErrAdminNoSuchAccessKey},
+	{err: iam.ErrNoSuchGroup, errCode: ErrAdminNoSuchGroup},
+	{err: iam.ErrGroupNotEmpty, errCode: ErrAdminGroupNotEmpty},
+	{err: iam.ErrGroupNameContainsReservedChars, errCode: ErrAdminInvalidGroupName},
+	{err: iam.ErrNoPolicyToAttachOrDetach, errCode: ErrAdminPolicyChangeAlreadyApplied},
 
 	{err: nil, errCode: ErrNone},
 	{err: errors.New("Custom error"), errCode: ErrInternalError}, // Case where err type is unknown.

@@ -27,6 +27,7 @@ import (
 
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio/internal/auth"
+	"github.com/minio/minio/internal/iam"
 	"github.com/minio/mux"
 	xldap "github.com/minio/pkg/v3/ldap"
 	"github.com/minio/pkg/v3/policy"
@@ -250,7 +251,7 @@ func (a adminAPIHandlers) AddServiceAccountLDAP(w http.ResponseWriter, r *http.R
 		// In case of LDAP/OIDC we need to set `opts.claims` to ensure
 		// it is associated with the LDAP/OIDC user properly.
 		for k, v := range cred.Claims {
-			if k == expClaim {
+			if k == auth.ClaimExpiry {
 				continue
 			}
 			opts.claims[k] = v
@@ -262,7 +263,7 @@ func (a adminAPIHandlers) AddServiceAccountLDAP(w http.ResponseWriter, r *http.R
 		// However, for now, we only support using the short username.
 
 		isDN := globalIAMSys.LDAPConfig.ParsesAsDN(targetUser)
-		opts.claims[ldapUserN] = targetUser // simple username
+		opts.claims[auth.ClaimLDAPUsername] = targetUser // simple username
 		var lookupResult *xldap.DNSearchResult
 		lookupResult, targetGroups, err = globalIAMSys.LDAPConfig.LookupUserDN(targetUser)
 		if err != nil {
@@ -279,8 +280,8 @@ func (a adminAPIHandlers) AddServiceAccountLDAP(w http.ResponseWriter, r *http.R
 			return
 		}
 		targetUser = lookupResult.NormDN
-		opts.claims[ldapUser] = targetUser // DN
-		opts.claims[ldapActualUser] = lookupResult.ActualDN
+		opts.claims[auth.ClaimLDAPUserDN] = targetUser // DN
+		opts.claims[auth.ClaimLDAPActualUserDN] = lookupResult.ActualDN
 
 		// Check if this user or their groups have a policy applied.
 		ldapPolicies, err := globalIAMSys.PolicyDBGet(targetUser, targetGroups...)
@@ -289,14 +290,14 @@ func (a adminAPIHandlers) AddServiceAccountLDAP(w http.ResponseWriter, r *http.R
 			return
 		}
 		if len(ldapPolicies) == 0 {
-			err = fmt.Errorf("No policy set for user `%s` or any of their groups: `%s`", opts.claims[ldapActualUser], strings.Join(targetGroups, "`,`"))
+			err = fmt.Errorf("No policy set for user `%s` or any of their groups: `%s`", opts.claims[auth.ClaimLDAPActualUserDN], strings.Join(targetGroups, "`,`"))
 			writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErrWithErr(ErrAdminNoSuchUser, err), r.URL)
 			return
 		}
 
 		// Add LDAP attributes that were looked up into the claims.
 		for attribKey, attribValue := range lookupResult.Attributes {
-			opts.claims[ldapAttribPrefix+attribKey] = attribValue
+			opts.claims[auth.ClaimLDAPAttributePrefix+attribKey] = attribValue
 		}
 	}
 
@@ -410,7 +411,7 @@ func (a adminAPIHandlers) ListAccessKeysLDAP(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if dnResult == nil {
-		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, errNoSuchUser), r.URL)
+		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, iam.ErrNoSuchUser), r.URL)
 		return
 	}
 	targetAccount := dnResult.NormDN

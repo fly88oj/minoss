@@ -27,6 +27,7 @@ import (
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio/internal/auth"
 	"github.com/minio/minio/internal/config"
+	"github.com/minio/minio/internal/iam"
 	"github.com/minio/pkg/v3/policy"
 )
 
@@ -112,7 +113,7 @@ func toAdminAPIErr(ctx context.Context, err error) APIError {
 		}
 	default:
 		switch {
-		case errors.Is(err, errTooManyPolicies):
+		case errors.Is(err, iam.ErrTooManyPolicies):
 			apiErr = APIError{
 				Code:           "XMinioAdminInvalidRequest",
 				Description:    err.Error(),
@@ -148,31 +149,31 @@ func toAdminAPIErr(ctx context.Context, err error) APIError {
 				Description:    err.Error(),
 				HTTPStatusCode: http.StatusNotFound,
 			}
-		case errors.Is(err, errIAMActionNotAllowed):
+		case errors.Is(err, iam.ErrIAMActionNotAllowed):
 			apiErr = APIError{
 				Code:           "XMinioIAMActionNotAllowed",
 				Description:    err.Error(),
 				HTTPStatusCode: http.StatusForbidden,
 			}
-		case errors.Is(err, errIAMServiceAccountNotAllowed):
+		case errors.Is(err, iam.ErrIAMServiceAccountNotAllowed):
 			apiErr = APIError{
 				Code:           "XMinioIAMServiceAccountNotAllowed",
 				Description:    err.Error(),
 				HTTPStatusCode: http.StatusBadRequest,
 			}
-		case errors.Is(err, errIAMNotInitialized):
+		case errors.Is(err, iam.ErrIAMNotInitialized):
 			apiErr = APIError{
 				Code:           "XMinioIAMNotInitialized",
 				Description:    err.Error(),
 				HTTPStatusCode: http.StatusServiceUnavailable,
 			}
-		case errors.Is(err, errPolicyInUse):
+		case errors.Is(err, iam.ErrPolicyInUse):
 			apiErr = APIError{
 				Code:           "XMinioIAMPolicyInUse",
 				Description:    "The policy cannot be removed, as it is in use",
 				HTTPStatusCode: http.StatusBadRequest,
 			}
-		case errors.Is(err, errSessionPolicyTooLarge):
+		case errors.Is(err, iam.ErrSessionPolicyTooLarge):
 			apiErr = APIError{
 				Code:           "XMinioIAMServiceAccountSessionPolicyTooLarge",
 				Description:    err.Error(),
