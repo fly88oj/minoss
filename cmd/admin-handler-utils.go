@@ -149,6 +149,14 @@ func toAdminAPIErr(ctx context.Context, err error) APIError {
 				Description:    err.Error(),
 				HTTPStatusCode: http.StatusNotFound,
 			}
+		case errors.Is(err, iam.ErrGroupDisabled):
+			// ErrAdminGroupDisabled was already defined and simply never wired
+			// up, so disabling a group surfaced as a generic 500.
+			apiErr = errorCodes.ToAPIErr(ErrAdminGroupDisabled)
+		case errors.Is(err, iam.ErrNoSuchTempAccount):
+			// Report a missing STS session the way the account-info handler
+			// already does by hand: as a missing access key, not a server fault.
+			apiErr = errorCodes.ToAPIErr(ErrAdminNoSuchAccessKey)
 		case errors.Is(err, iam.ErrIAMActionNotAllowed):
 			apiErr = APIError{
 				Code:           "XMinioIAMActionNotAllowed",

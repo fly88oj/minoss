@@ -45,6 +45,10 @@ func TestToAdminAPIErrIAMSentinels(t *testing.T) {
 		{iam.ErrIAMNotInitialized, "XMinioIAMNotInitialized", http.StatusServiceUnavailable, false},
 		{iam.ErrPolicyInUse, "XMinioIAMPolicyInUse", http.StatusBadRequest, false},
 		{iam.ErrSessionPolicyTooLarge, "XMinioIAMServiceAccountSessionPolicyTooLarge", http.StatusBadRequest, false},
+		// These two had an API error code defined or implied but no mapping, so
+		// they reached clients as a generic 500.
+		{iam.ErrGroupDisabled, "XMinioAdminGroupDisabled", http.StatusBadRequest, false},
+		{iam.ErrNoSuchTempAccount, "XMinioAdminNoSuchAccessKey", http.StatusNotFound, false},
 		// Admin handlers wrap these with context; the mapping unwraps.
 		{fmt.Errorf("loading policy: %w", iam.ErrIAMActionNotAllowed), "XMinioIAMActionNotAllowed", http.StatusForbidden, true},
 	}

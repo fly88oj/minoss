@@ -51,8 +51,11 @@ var (
 	// ErrNoSuchAccessKey is returned when an access key does not exist.
 	ErrNoSuchAccessKey = errors.New("Specified access key does not exist")
 
-	// ErrNoSuchAccount is returned when an account (user or service account)
-	// does not exist.
+	// ErrNoSuchAccount is the internal "not found" signal from the account
+	// lookup, translated by every caller into the more specific
+	// ErrNoSuchServiceAccount or ErrNoSuchTempAccount before it can reach a
+	// handler - deliberately not mapped to an API error code, since it never
+	// escapes the subsystem.
 	ErrNoSuchAccount = errors.New("Specified account does not exist")
 
 	// ErrNoSuchGroup is returned when a group does not exist.
