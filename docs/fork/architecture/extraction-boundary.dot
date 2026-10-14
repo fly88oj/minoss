@@ -1,0 +1,57 @@
+// GENERATED from extraction.model.json by generate.py - do not edit.
+// View: cmd -> internal extraction boundary
+// Question: What has actually left cmd, and what still blocks the next subsystem from leaving?
+// Level: L3 components/modules
+digraph extraction_boundary {
+  rankdir=TB;
+  node [shape=box, fontname="Sans", fontsize=11];
+  edge [fontname="Sans", fontsize=10];
+  cmd [shape=box, style="filled", fillcolor="#ffe9b3", label="cmd\\n286 non-test files / 175,519 lines\\n(245,108 lines incl. tests)\\npackage-level globals: ~165", tooltip="state=current | confidence=high | sourceRefs: cmd/; CONTRIBUTING.md (minoss fork rules)"];
+  // state=current | confidence=high | sourceRefs: cmd/; CONTRIBUTING.md (minoss fork rules)
+  internalRest [shape=box, label="35 more internal/* packages\\ncmd imports 59 of them in total\\nno internal -> cmd edge exists", tooltip="state=current | confidence=high | sourceRefs: go list -f '{{.ImportPath}} {{join .Imports &quot; &quot;}}' ./cmd ./internal/..."];
+  // state=current | confidence=high | sourceRefs: go list -f '{{.ImportPath}} {{join .Imports " "}}' ./cmd ./internal/...
+  subgraph cluster_1 {
+    label="extracted from cmd (this program)";
+    style=rounded;
+    metrics [shape=box, label="internal/metrics\\n22 files, metrics.Deps\\n~30 injected hooks + value fields\\nwired in cmd/metrics-v3.go\\ne987c6960", tooltip="state=current | confidence=high | sourceRefs: internal/metrics/deps.go; cmd/metrics-v3.go"];
+    // state=current | confidence=high | sourceRefs: internal/metrics/deps.go; cmd/metrics-v3.go
+    auth [shape=box, label="internal/auth\\n+ claims.go: 12 JWT claim names\\n+ sa-policy values\\nf15faba46", tooltip="state=current | confidence=high | sourceRefs: internal/auth/claims.go"];
+    // state=current | confidence=high | sourceRefs: internal/auth/claims.go
+    iamPkg [shape=box, label="internal/iam\\nNEW - errors.go only\\n18 sentinels, no logic yet\\n69ca2d5f0", tooltip="state=current | confidence=high | sourceRefs: internal/iam/errors.go; internal/iam/errors_test.go"];
+    // state=current | confidence=high | sourceRefs: internal/iam/errors.go; internal/iam/errors_test.go
+  }
+  subgraph cluster_2 {
+    label="still inside cmd - extraction targets";
+    style=rounded;
+    iamInCmd [shape=box, style="filled", fillcolor="#ffd9d9", label="IAM subsystem (still in cmd)\\niam.go 2,559 + iam-store.go 3,071\\n+ iam-object-store.go 912 + iam-etcd-store.go 501\\n= 7,043 lines\\nIAMStorageAPI = 27 methods", tooltip="state=current | confidence=high | sourceRefs: cmd/iam.go; cmd/iam-store.go:591; cmd/iam-object-store.go; cmd/iam-etcd-store.go"];
+    // state=current | confidence=high | sourceRefs: cmd/iam.go; cmd/iam-store.go:591; cmd/iam-object-store.go; cmd/iam-etcd-store.go
+    siterep [shape=box, style="filled", fillcolor="#f0f0f0", label="site replication (still in cmd)\\ncmd/site-replication*.go ~8,980 lines\\nincl. msgpack codecs\\ntarget: internal/siterep", tooltip="state=current | confidence=high | sourceRefs: cmd/site-replication.go:200; docs/fork/backlog.md (item 3)"];
+    // state=current | confidence=high | sourceRefs: cmd/site-replication.go:200; docs/fork/backlog.md (item 3)
+    objLayer [shape=cylinder, label="ObjectLayer interface (cmd)\\n44 methods\\nWalk(chan<- itemOrErr[ObjectInfo])\\nitemOrErr/ObjectInfo unexported to cmd", tooltip="state=current | confidence=high | sourceRefs: cmd/object-api-interface.go"];
+    // state=current | confidence=high | sourceRefs: cmd/object-api-interface.go
+  }
+  cmd -> metrics [label="calls; state handed in as Deps at bootstrap", tooltip="type=calls | confidence=high | sync=sync | protocol=in-process | sourceRefs: cmd/metrics-v3.go:newMetricsDeps"];
+  // type=calls | confidence=high | sync=sync | protocol=in-process | sourceRefs: cmd/metrics-v3.go:newMetricsDeps
+  cmd -> auth [label="uses claim names", tooltip="type=depends-on | confidence=high | sync=n/a | protocol=in-process | sourceRefs: cmd/sts-handlers.go"];
+  // type=depends-on | confidence=high | sync=n/a | protocol=in-process | sourceRefs: cmd/sts-handlers.go
+  cmd -> iamPkg [label="216 references to iam.Err* sentinels", tooltip="type=depends-on | confidence=high | sync=n/a | protocol=in-process | sourceRefs: cmd/api-errors.go:2158"];
+  // type=depends-on | confidence=high | sync=n/a | protocol=in-process | sourceRefs: cmd/api-errors.go:2158
+  cmd -> internalRest [label="in-process imports (59 pkgs)", style=dashed, tooltip="type=depends-on | confidence=high | sync=n/a | protocol=in-process | sourceRefs: go list output"];
+  // type=depends-on | confidence=high | sync=n/a | protocol=in-process | sourceRefs: go list output
+  iamInCmd -> cmd [label="BLOCKER 1: reads ~75+ cmd symbols - globals, shared errors, jwt/etcd/config helpers, path utils (a compile-probe floor, not a census)", color="#cc0000", tooltip="type=reads | confidence=high | risk=BLOCKER 1 | sourceRefs: compile probe of the four IAM files; docs/fork/backlog.md (item 2)"];
+  // type=reads | confidence=high | risk=BLOCKER 1 | sourceRefs: compile probe of the four IAM files; docs/fork/backlog.md (item 2)
+  cmd -> iamInCmd [label="BLOCKER 2: globalIAMSys used from 31 files, and 29 reads (site-replication 23, admin-handlers-users 6) go through the UNEXPORTED .store field", color="#cc0000", tooltip="type=reads | confidence=high | risk=BLOCKER 2 | sourceRefs: cmd/site-replication.go; cmd/admin-handlers-users.go:2298"];
+  // type=reads | confidence=high | risk=BLOCKER 2 | sourceRefs: cmd/site-replication.go; cmd/admin-handlers-users.go:2298
+  iamInCmd -> objLayer [label="uses only 5 methods (GetObjectNInfo, PutObject, DeleteObject, GetObjectInfo, Walk)", tooltip="type=calls | confidence=high | sourceRefs: cmd/iam-object-store.go:51; cmd/iam-object-store.go:875"];
+  // type=calls | confidence=high | sourceRefs: cmd/iam-object-store.go:51; cmd/iam-object-store.go:875
+  objLayer -> iamInCmd [label="BLOCKER 3: cannot be implemented outside cmd - Walk's channel carries unexported itemOrErr[ObjectInfo]", color="#cc0000", style=dashed, tooltip="type=blocks | confidence=high | risk=BLOCKER 3 | sourceRefs: cmd/object-api-interface.go; cmd/utils.go:1164"];
+  // type=blocks | confidence=high | risk=BLOCKER 3 | sourceRefs: cmd/object-api-interface.go; cmd/utils.go:1164
+  siterep -> iamInCmd [label="reaches into IAM internals: store.loadMappedPolicies x8, loadUsers x5, GetPolicyDoc, LDAPConfig, OpenIDConfig", tooltip="type=reads | confidence=high | sourceRefs: cmd/site-replication.go:1236; cmd/site-replication.go:3755"];
+  // type=reads | confidence=high | sourceRefs: cmd/site-replication.go:1236; cmd/site-replication.go:3755
+  iamInCmd -> siterep [label="calls back: IAMChangeHook iam.go:2072,2168; isEnabled iam-store.go:3039", tooltip="type=calls | confidence=high | sourceRefs: cmd/iam.go:2072; cmd/iam-store.go:3039"];
+  // type=calls | confidence=high | sourceRefs: cmd/iam.go:2072; cmd/iam-store.go:3039
+  siterep -> iamPkg [label="ordering: IAM must extract first, else IAM <-> siterep is an import cycle", style=dashed, tooltip="type=depends-on | confidence=medium | sourceRefs: docs/fork/backlog.md (item 3)"];
+  // type=depends-on | confidence=medium | sourceRefs: docs/fork/backlog.md (item 3)
+  iamInCmd -> iamPkg [label="extraction in flight (claim keys + sentinels landed; types, stores, IAMSys remain)", color="#0066cc", style=dashed, tooltip="type=replaces | confidence=high | sourceRefs: git log 6afc81c4b..HEAD"];
+  // type=replaces | confidence=high | sourceRefs: git log 6afc81c4b..HEAD
+}

@@ -1,0 +1,649 @@
+{
+  "meta": {
+    "generated": "2026-10-13",
+    "repo": "minoss (community fork of MinIO)",
+    "method": "go list -f for import edges, wc -l for sizes, grep -c for call counts, plus a compile probe: the four cmd/iam*.go files copied into a scratch package inside this module to enumerate what they read from cmd.",
+    "confidenceScale": "high = measured in this checkout; medium = inferred from several partial signals; low = naming/structure only",
+    "note": "This file is the source of truth. extraction-boundary.dot, iam-seam-blockers.dot and cmd-internal-extraction.drawio are generated from it by generate.py."
+  },
+  "views": [
+    {
+      "id": "extraction-boundary",
+      "title": "cmd -> internal extraction boundary",
+      "question": "What has actually left cmd, and what still blocks the next subsystem from leaving?",
+      "level": "L3 components/modules",
+      "nodes": [
+        {
+          "id": "cmd",
+          "label": [
+            "cmd",
+            "286 non-test files / 175,519 lines",
+            "(245,108 lines incl. tests)",
+            "package-level globals: ~165"
+          ],
+          "type": "module",
+          "state": "current",
+          "confidence": "high",
+          "rank": 0,
+          "fill": "#ffe9b3",
+          "sourceRefs": [
+            "cmd/",
+            "CONTRIBUTING.md (minoss fork rules)"
+          ]
+        },
+        {
+          "id": "metrics",
+          "label": [
+            "internal/metrics",
+            "22 files, metrics.Deps",
+            "~30 injected hooks + value fields",
+            "wired in cmd/metrics-v3.go",
+            "e987c6960"
+          ],
+          "type": "module",
+          "state": "current",
+          "confidence": "high",
+          "rank": 1,
+          "group": "extracted from cmd (this program)",
+          "sourceRefs": [
+            "internal/metrics/deps.go",
+            "cmd/metrics-v3.go"
+          ]
+        },
+        {
+          "id": "auth",
+          "label": [
+            "internal/auth",
+            "+ claims.go: 12 JWT claim names",
+            "+ sa-policy values",
+            "f15faba46"
+          ],
+          "type": "module",
+          "state": "current",
+          "confidence": "high",
+          "rank": 1,
+          "group": "extracted from cmd (this program)",
+          "sourceRefs": [
+            "internal/auth/claims.go"
+          ]
+        },
+        {
+          "id": "iamPkg",
+          "label": [
+            "internal/iam",
+            "NEW - errors.go only",
+            "18 sentinels, no logic yet",
+            "69ca2d5f0"
+          ],
+          "type": "module",
+          "state": "current",
+          "confidence": "high",
+          "rank": 1,
+          "group": "extracted from cmd (this program)",
+          "sourceRefs": [
+            "internal/iam/errors.go",
+            "internal/iam/errors_test.go"
+          ]
+        },
+        {
+          "id": "internalRest",
+          "label": [
+            "35 more internal/* packages",
+            "cmd imports 59 of them in total",
+            "no internal -> cmd edge exists"
+          ],
+          "type": "module",
+          "state": "current",
+          "confidence": "high",
+          "rank": 1,
+          "dashed": true,
+          "sourceRefs": [
+            "go list -f '{{.ImportPath}} {{join .Imports \" \"}}' ./cmd ./internal/..."
+          ]
+        },
+        {
+          "id": "iamInCmd",
+          "label": [
+            "IAM subsystem (still in cmd)",
+            "iam.go 2,559 + iam-store.go 3,071",
+            "+ iam-object-store.go 912 + iam-etcd-store.go 501",
+            "= 7,043 lines",
+            "IAMStorageAPI = 27 methods"
+          ],
+          "type": "module",
+          "state": "current",
+          "confidence": "high",
+          "rank": 2,
+          "group": "still inside cmd - extraction targets",
+          "fill": "#ffd9d9",
+          "sourceRefs": [
+            "cmd/iam.go",
+            "cmd/iam-store.go:591",
+            "cmd/iam-object-store.go",
+            "cmd/iam-etcd-store.go"
+          ]
+        },
+        {
+          "id": "siterep",
+          "label": [
+            "site replication (still in cmd)",
+            "cmd/site-replication*.go ~8,980 lines",
+            "incl. msgpack codecs",
+            "target: internal/siterep"
+          ],
+          "type": "module",
+          "state": "current",
+          "confidence": "high",
+          "rank": 2,
+          "group": "still inside cmd - extraction targets",
+          "fill": "#f0f0f0",
+          "sourceRefs": [
+            "cmd/site-replication.go:200",
+            "docs/fork/backlog.md (item 3)"
+          ]
+        },
+        {
+          "id": "objLayer",
+          "label": [
+            "ObjectLayer interface (cmd)",
+            "44 methods",
+            "Walk(chan<- itemOrErr[ObjectInfo])",
+            "itemOrErr/ObjectInfo unexported to cmd"
+          ],
+          "type": "interface",
+          "state": "current",
+          "confidence": "high",
+          "rank": 3,
+          "group": "still inside cmd - extraction targets",
+          "sourceRefs": [
+            "cmd/object-api-interface.go"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "e-cmd-metrics",
+          "from": "cmd",
+          "to": "metrics",
+          "type": "calls",
+          "sync": "sync",
+          "protocol": "in-process",
+          "confidence": "high",
+          "label": "calls; state handed in as Deps at bootstrap",
+          "sourceRefs": [
+            "cmd/metrics-v3.go:newMetricsDeps"
+          ]
+        },
+        {
+          "id": "e-cmd-auth",
+          "from": "cmd",
+          "to": "auth",
+          "type": "depends-on",
+          "sync": "n/a",
+          "protocol": "in-process",
+          "confidence": "high",
+          "label": "uses claim names",
+          "sourceRefs": [
+            "cmd/sts-handlers.go"
+          ]
+        },
+        {
+          "id": "e-cmd-iamPkg",
+          "from": "cmd",
+          "to": "iamPkg",
+          "type": "depends-on",
+          "sync": "n/a",
+          "protocol": "in-process",
+          "confidence": "high",
+          "label": "216 references to iam.Err* sentinels",
+          "sourceRefs": [
+            "cmd/api-errors.go:2158"
+          ]
+        },
+        {
+          "id": "e-cmd-rest",
+          "from": "cmd",
+          "to": "internalRest",
+          "type": "depends-on",
+          "sync": "n/a",
+          "protocol": "in-process",
+          "confidence": "high",
+          "label": "in-process imports (59 pkgs)",
+          "style": "dashed",
+          "sourceRefs": [
+            "go list output"
+          ]
+        },
+        {
+          "id": "e-iamInCmd-cmd",
+          "from": "iamInCmd",
+          "to": "cmd",
+          "type": "reads",
+          "confidence": "high",
+          "risk": "BLOCKER 1",
+          "label": "reads ~75+ cmd symbols - globals, shared errors, jwt/etcd/config helpers, path utils (a compile-probe floor, not a census)",
+          "color": "#cc0000",
+          "sourceRefs": [
+            "compile probe of the four IAM files",
+            "docs/fork/backlog.md (item 2)"
+          ]
+        },
+        {
+          "id": "e-cmd-iamInCmd",
+          "from": "cmd",
+          "to": "iamInCmd",
+          "type": "reads",
+          "confidence": "high",
+          "risk": "BLOCKER 2",
+          "label": "globalIAMSys used from 31 files, and 29 reads (site-replication 23, admin-handlers-users 6) go through the UNEXPORTED .store field",
+          "color": "#cc0000",
+          "sourceRefs": [
+            "cmd/site-replication.go",
+            "cmd/admin-handlers-users.go:2298"
+          ]
+        },
+        {
+          "id": "e-iamInCmd-objLayer",
+          "from": "iamInCmd",
+          "to": "objLayer",
+          "type": "calls",
+          "confidence": "high",
+          "label": "uses only 5 methods (GetObjectNInfo, PutObject, DeleteObject, GetObjectInfo, Walk)",
+          "sourceRefs": [
+            "cmd/iam-object-store.go:51",
+            "cmd/iam-object-store.go:875"
+          ]
+        },
+        {
+          "id": "e-objLayer-iamInCmd",
+          "from": "objLayer",
+          "to": "iamInCmd",
+          "type": "blocks",
+          "confidence": "high",
+          "risk": "BLOCKER 3",
+          "label": "cannot be implemented outside cmd - Walk's channel carries unexported itemOrErr[ObjectInfo]",
+          "color": "#cc0000",
+          "style": "dashed",
+          "sourceRefs": [
+            "cmd/object-api-interface.go",
+            "cmd/utils.go:1164"
+          ]
+        },
+        {
+          "id": "e-siterep-iam",
+          "from": "siterep",
+          "to": "iamInCmd",
+          "type": "reads",
+          "confidence": "high",
+          "label": "reaches into IAM internals: store.loadMappedPolicies x8, loadUsers x5, GetPolicyDoc, LDAPConfig, OpenIDConfig",
+          "sourceRefs": [
+            "cmd/site-replication.go:1236",
+            "cmd/site-replication.go:3755"
+          ]
+        },
+        {
+          "id": "e-iam-siterep",
+          "from": "iamInCmd",
+          "to": "siterep",
+          "type": "calls",
+          "confidence": "high",
+          "label": "calls back: IAMChangeHook iam.go:2072,2168; isEnabled iam-store.go:3039",
+          "sourceRefs": [
+            "cmd/iam.go:2072",
+            "cmd/iam-store.go:3039"
+          ]
+        },
+        {
+          "id": "e-siterep-iamPkg",
+          "from": "siterep",
+          "to": "iamPkg",
+          "type": "depends-on",
+          "confidence": "medium",
+          "label": "ordering: IAM must extract first, else IAM <-> siterep is an import cycle",
+          "style": "dashed",
+          "sourceRefs": [
+            "docs/fork/backlog.md (item 3)"
+          ]
+        },
+        {
+          "id": "e-iamInCmd-iamPkg",
+          "from": "iamInCmd",
+          "to": "iamPkg",
+          "type": "replaces",
+          "confidence": "high",
+          "label": "extraction in flight (claim keys + sentinels landed; types, stores, IAMSys remain)",
+          "color": "#0066cc",
+          "style": "dashed",
+          "sourceRefs": [
+            "git log 6afc81c4b..HEAD"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "iam-seam-blockers",
+      "title": "What IAM reads from cmd, and how each read must be cut",
+      "question": "To move cmd/iam*.go into internal/iam, which cmd symbols move, which become injected, and which are blocked outright?",
+      "level": "L4 code/symbols",
+      "nodes": [
+        {
+          "id": "iamLogic",
+          "label": [
+            "IAM logic still in cmd",
+            "iam.go, iam-store.go,",
+            "iam-object-store.go, iam-etcd-store.go"
+          ],
+          "type": "module",
+          "state": "current",
+          "confidence": "high",
+          "rank": 0,
+          "fill": "#ffe9b3",
+          "sourceRefs": [
+            "cmd/iam.go",
+            "cmd/iam-store.go"
+          ]
+        },
+        {
+          "id": "iamTarget",
+          "label": [
+            "internal/iam",
+            "(currently: errors.go only)"
+          ],
+          "type": "module",
+          "state": "target",
+          "confidence": "high",
+          "rank": 4,
+          "fill": "#d9f2d9",
+          "sourceRefs": [
+            "internal/iam/errors.go"
+          ]
+        },
+        {
+          "id": "moveEtcd",
+          "label": [
+            "readKeyEtcd / saveKeyEtcd / deleteKeyEtcd",
+            "+ errEtcdUnreachable",
+            "careful: defaultContextTimeout is DECLARED",
+            "in iam-etcd-store.go and read by etcd.go +",
+            "healthcheck-handler.go - leave a cmd copy"
+          ],
+          "type": "symbol",
+          "state": "current",
+          "confidence": "high",
+          "rank": 1,
+          "group": "MOVE - IAM-owned, no readers outside cmd",
+          "sourceRefs": [
+            "cmd/etcd.go:54-74",
+            "cmd/iam-etcd-store.go:37"
+          ]
+        },
+        {
+          "id": "moveLog",
+          "label": [
+            "iamLogIf (41 reads) / iamLogOnceIf / iamLogEvent",
+            "2 cmd readers outside (admin users, site-rep)",
+            "=> export as iam.LogIf / LogOnce / LogEvent"
+          ],
+          "type": "symbol",
+          "state": "current",
+          "confidence": "high",
+          "rank": 1,
+          "group": "MOVE - IAM-owned, no readers outside cmd",
+          "sourceRefs": [
+            "cmd/logging.go:23-33"
+          ]
+        },
+        {
+          "id": "moveLayout",
+          "label": [
+            "storage layout constants",
+            "iamConfigPrefix + 10 siblings, iamIdentityFile,",
+            "iamPolicyFile, iamGroupMembersFile,",
+            "iamFormatFile (read only from the four files)"
+          ],
+          "type": "symbol",
+          "state": "current",
+          "confidence": "high",
+          "rank": 1,
+          "group": "MOVE - IAM-owned, no readers outside cmd",
+          "sourceRefs": [
+            "cmd/iam-store.go:47-89"
+          ]
+        },
+        {
+          "id": "doneBits",
+          "label": [
+            "DONE: 12 JWT claim names -> internal/auth",
+            "DONE: 18 error sentinels -> internal/iam"
+          ],
+          "type": "symbol",
+          "state": "current",
+          "confidence": "high",
+          "rank": 1,
+          "group": "MOVE - IAM-owned, no readers outside cmd",
+          "fill": "#d9f2d9",
+          "sourceRefs": [
+            "internal/auth/claims.go",
+            "internal/iam/errors.go"
+          ]
+        },
+        {
+          "id": "sharedErr",
+          "label": [
+            "errConfigNotFound (26) / errServerNotInitialized (44)",
+            "errInvalidArgument (20)",
+            "read by 31 / 20 / 30 non-IAM cmd files;",
+            "cmd/api-errors.go switches on their IDENTITY,",
+            "so a second value silently turns 4xx into 500"
+          ],
+          "type": "symbol",
+          "state": "current",
+          "confidence": "high",
+          "rank": 2,
+          "group": "SHARED VALUES - must be injected, never redeclared",
+          "fill": "#ffd9d9",
+          "sourceRefs": [
+            "cmd/typed-errors.go:25,40",
+            "cmd/config-common.go:30",
+            "cmd/api-errors.go:2155"
+          ]
+        },
+        {
+          "id": "injectGlobals",
+          "label": [
+            "globalNotificationSys (10) -> NotifyIAM hook",
+            "globalSiteReplicationSys (3) -> Replicator iface",
+            "globalActiveCred (8), GlobalKMS (7), GlobalContext (15)",
+            "globalSite (2), globalServerConfig(+Mu) (2),",
+            "globalIsDistErasure, globalRootCAs, globalObjectAPI"
+          ],
+          "type": "symbol",
+          "state": "proposed",
+          "confidence": "high",
+          "rank": 2,
+          "group": "INJECT - Deps hooks/fields (pattern: internal/metrics/deps.go)",
+          "sourceRefs": [
+            "cmd/globals.go"
+          ]
+        },
+        {
+          "id": "injectAuthz",
+          "label": [
+            "getTokenSigningKey (5), getClaimsFromTokenWithSecret (6),",
+            "iamPolicyClaimNameOpenID (6) -> method on IAMSys,",
+            "newGlobalAuthN/ZPluginFn + setters"
+          ],
+          "type": "symbol",
+          "state": "proposed",
+          "confidence": "high",
+          "rank": 2,
+          "group": "INJECT - Deps hooks/fields (pattern: internal/metrics/deps.go)",
+          "sourceRefs": [
+            "cmd/sts-handlers.go:245",
+            "cmd/auth-handler.go:224",
+            "cmd/utils.go:885"
+          ]
+        },
+        {
+          "id": "injectCfgIO",
+          "label": [
+            "saveConfig / readConfigWithMetadata /",
+            "deleteConfig / checkConfig / configRetriableErrors",
+            "shared with 10/3/4/1 non-IAM files - do not",
+            "duplicate; adapt behind the object seam"
+          ],
+          "type": "symbol",
+          "state": "proposed",
+          "confidence": "high",
+          "rank": 2,
+          "group": "INJECT - Deps hooks/fields (pattern: internal/metrics/deps.go)",
+          "sourceRefs": [
+            "cmd/config-common.go:32-87"
+          ]
+        },
+        {
+          "id": "injectSmall",
+          "label": [
+            "bootstrapTraceMsg (8), NewHTTPTransport (3),",
+            "GetDefaultConnSettings, getUserAgent,",
+            "getMinioMode, siteReplicatorSvcAcc (2)"
+          ],
+          "type": "symbol",
+          "state": "proposed",
+          "confidence": "medium",
+          "rank": 2,
+          "group": "INJECT - Deps hooks/fields (pattern: internal/metrics/deps.go)",
+          "sourceRefs": [
+            "cmd/server-main.go:537",
+            "cmd/utils.go:598,872"
+          ]
+        },
+        {
+          "id": "blockObjAPI",
+          "label": [
+            "ObjectLayer (9) + ObjectInfo (1) + ObjectOptions (1)",
+            "+ itemOrErr (6) + WalkOptions (1)",
+            "Walk's channel type is unexported to cmd",
+            "=> 5-method config-object seam",
+            "Get/Put/Delete/Stat/ListConfigItems, with",
+            "isErrObjectNotFound -> errConfigNotFound",
+            "mapped in the cmd adapter"
+          ],
+          "type": "interface",
+          "state": "proposed",
+          "confidence": "high",
+          "rank": 3,
+          "group": "BLOCKED - needs a new seam, not an injection",
+          "fill": "#ffd9d9",
+          "sourceRefs": [
+            "cmd/object-api-interface.go",
+            "cmd/iam-object-store.go:884"
+          ]
+        },
+        {
+          "id": "blockStore",
+          "label": [
+            "the other direction: cmd reads sys.store.*",
+            "from 29 sites",
+            "=> IAMSys must grow narrow pass-through",
+            "methods, or the store must be exported"
+          ],
+          "type": "risk",
+          "state": "current",
+          "confidence": "high",
+          "rank": 3,
+          "group": "BLOCKED - needs a new seam, not an injection",
+          "fill": "#ffd9d9",
+          "sourceRefs": [
+            "cmd/site-replication.go",
+            "cmd/admin-handlers-users.go:2298"
+          ]
+        },
+        {
+          "id": "stdlibBits",
+          "label": [
+            "STDLIB - drop the dependency",
+            "time.Now().UTC() for UTCNow (21)",
+            "\"/\" for SlashSeparator (4)",
+            "path.Join for pathJoin (7) - ONLY where the last",
+            "element is a constant filename: pathJoin keeps a",
+            "trailing separator, path.Join does not.",
+            "pathClean (\".\" -> \"\") needs a local copy."
+          ],
+          "type": "decision",
+          "state": "proposed",
+          "confidence": "high",
+          "rank": 3,
+          "sourceRefs": [
+            "cmd/utils.go:575,722",
+            "cmd/object-api-utils.go:268-305"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "e-iam-target",
+          "from": "iamLogic",
+          "to": "iamTarget",
+          "type": "replaces",
+          "confidence": "high",
+          "label": "move once every edge below is cut",
+          "style": "bold",
+          "sourceRefs": [
+            "docs/fork/backlog.md (item 2)"
+          ]
+        },
+        {
+          "id": "e-iam-move",
+          "from": "iamLogic",
+          "to": "moveLayout",
+          "type": "moves-with",
+          "confidence": "high",
+          "label": "moves with the package",
+          "sourceRefs": []
+        },
+        {
+          "id": "e-iam-shared",
+          "from": "iamLogic",
+          "to": "sharedErr",
+          "type": "depends-on",
+          "confidence": "high",
+          "label": "identity must survive -> Deps fields",
+          "color": "#cc0000",
+          "sourceRefs": [
+            "cmd/api-errors.go:2155"
+          ]
+        },
+        {
+          "id": "e-iam-inject",
+          "from": "iamLogic",
+          "to": "injectGlobals",
+          "type": "depends-on",
+          "confidence": "high",
+          "label": "becomes Deps hooks",
+          "sourceRefs": []
+        },
+        {
+          "id": "e-iam-blocked",
+          "from": "iamLogic",
+          "to": "blockObjAPI",
+          "type": "depends-on",
+          "confidence": "high",
+          "label": "becomes a narrower interface",
+          "color": "#cc0000",
+          "sourceRefs": []
+        },
+        {
+          "id": "e-iam-stdlib",
+          "from": "iamLogic",
+          "to": "stdlibBits",
+          "type": "depends-on",
+          "confidence": "high",
+          "label": "replaced",
+          "style": "dashed",
+          "sourceRefs": []
+        }
+      ]
+    }
+  ]
+}

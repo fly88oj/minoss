@@ -1,0 +1,65 @@
+// GENERATED from extraction.model.json by generate.py - do not edit.
+// View: What IAM reads from cmd, and how each read must be cut
+// Question: To move cmd/iam*.go into internal/iam, which cmd symbols move, which become injected, and which are blocked outright?
+// Level: L4 code/symbols
+digraph iam_seam_blockers {
+  rankdir=TB;
+  node [shape=box, fontname="Sans", fontsize=11];
+  edge [fontname="Sans", fontsize=10];
+  iamLogic [shape=box, style="filled", fillcolor="#ffe9b3", label="IAM logic still in cmd\\niam.go, iam-store.go,\\niam-object-store.go, iam-etcd-store.go", tooltip="state=current | confidence=high | sourceRefs: cmd/iam.go; cmd/iam-store.go"];
+  // state=current | confidence=high | sourceRefs: cmd/iam.go; cmd/iam-store.go
+  iamTarget [shape=box, style="filled", fillcolor="#d9f2d9", label="internal/iam\\n(currently: errors.go only)", tooltip="state=target | confidence=high | sourceRefs: internal/iam/errors.go"];
+  // state=target | confidence=high | sourceRefs: internal/iam/errors.go
+  stdlibBits [shape=box, label="STDLIB - drop the dependency\\ntime.Now().UTC() for UTCNow (21)\\n\"/\" for SlashSeparator (4)\\npath.Join for pathJoin (7) - ONLY where the last\\nelement is a constant filename: pathJoin keeps a\\ntrailing separator, path.Join does not.\\npathClean (\".\" -> \"\") needs a local copy.", tooltip="state=proposed | confidence=high | sourceRefs: cmd/utils.go:575,722; cmd/object-api-utils.go:268-305"];
+  // state=proposed | confidence=high | sourceRefs: cmd/utils.go:575,722; cmd/object-api-utils.go:268-305
+  subgraph cluster_1 {
+    label="MOVE - IAM-owned, no readers outside cmd";
+    style=rounded;
+    moveEtcd [shape=box, label="readKeyEtcd / saveKeyEtcd / deleteKeyEtcd\\n+ errEtcdUnreachable\\ncareful: defaultContextTimeout is DECLARED\\nin iam-etcd-store.go and read by etcd.go +\\nhealthcheck-handler.go - leave a cmd copy", tooltip="state=current | confidence=high | sourceRefs: cmd/etcd.go:54-74; cmd/iam-etcd-store.go:37"];
+    // state=current | confidence=high | sourceRefs: cmd/etcd.go:54-74; cmd/iam-etcd-store.go:37
+    moveLog [shape=box, label="iamLogIf (41 reads) / iamLogOnceIf / iamLogEvent\\n2 cmd readers outside (admin users, site-rep)\\n=> export as iam.LogIf / LogOnce / LogEvent", tooltip="state=current | confidence=high | sourceRefs: cmd/logging.go:23-33"];
+    // state=current | confidence=high | sourceRefs: cmd/logging.go:23-33
+    moveLayout [shape=box, label="storage layout constants\\niamConfigPrefix + 10 siblings, iamIdentityFile,\\niamPolicyFile, iamGroupMembersFile,\\niamFormatFile (read only from the four files)", tooltip="state=current | confidence=high | sourceRefs: cmd/iam-store.go:47-89"];
+    // state=current | confidence=high | sourceRefs: cmd/iam-store.go:47-89
+    doneBits [shape=box, style="filled", fillcolor="#d9f2d9", label="DONE: 12 JWT claim names -> internal/auth\\nDONE: 18 error sentinels -> internal/iam", tooltip="state=current | confidence=high | sourceRefs: internal/auth/claims.go; internal/iam/errors.go"];
+    // state=current | confidence=high | sourceRefs: internal/auth/claims.go; internal/iam/errors.go
+  }
+  subgraph cluster_2 {
+    label="SHARED VALUES - must be injected, never redeclared";
+    style=rounded;
+    sharedErr [shape=box, style="filled", fillcolor="#ffd9d9", label="errConfigNotFound (26) / errServerNotInitialized (44)\\nerrInvalidArgument (20)\\nread by 31 / 20 / 30 non-IAM cmd files;\\ncmd/api-errors.go switches on their IDENTITY,\\nso a second value silently turns 4xx into 500", tooltip="state=current | confidence=high | sourceRefs: cmd/typed-errors.go:25,40; cmd/config-common.go:30; cmd/api-errors.go:2155"];
+    // state=current | confidence=high | sourceRefs: cmd/typed-errors.go:25,40; cmd/config-common.go:30; cmd/api-errors.go:2155
+  }
+  subgraph cluster_3 {
+    label="INJECT - Deps hooks/fields (pattern: internal/metrics/deps.go)";
+    style=rounded;
+    injectGlobals [shape=box, label="globalNotificationSys (10) -> NotifyIAM hook\\nglobalSiteReplicationSys (3) -> Replicator iface\\nglobalActiveCred (8), GlobalKMS (7), GlobalContext (15)\\nglobalSite (2), globalServerConfig(+Mu) (2),\\nglobalIsDistErasure, globalRootCAs, globalObjectAPI", tooltip="state=proposed | confidence=high | sourceRefs: cmd/globals.go"];
+    // state=proposed | confidence=high | sourceRefs: cmd/globals.go
+    injectAuthz [shape=box, label="getTokenSigningKey (5), getClaimsFromTokenWithSecret (6),\\niamPolicyClaimNameOpenID (6) -> method on IAMSys,\\nnewGlobalAuthN/ZPluginFn + setters", tooltip="state=proposed | confidence=high | sourceRefs: cmd/sts-handlers.go:245; cmd/auth-handler.go:224; cmd/utils.go:885"];
+    // state=proposed | confidence=high | sourceRefs: cmd/sts-handlers.go:245; cmd/auth-handler.go:224; cmd/utils.go:885
+    injectCfgIO [shape=box, label="saveConfig / readConfigWithMetadata /\\ndeleteConfig / checkConfig / configRetriableErrors\\nshared with 10/3/4/1 non-IAM files - do not\\nduplicate; adapt behind the object seam", tooltip="state=proposed | confidence=high | sourceRefs: cmd/config-common.go:32-87"];
+    // state=proposed | confidence=high | sourceRefs: cmd/config-common.go:32-87
+    injectSmall [shape=box, label="bootstrapTraceMsg (8), NewHTTPTransport (3),\\nGetDefaultConnSettings, getUserAgent,\\ngetMinioMode, siteReplicatorSvcAcc (2)", tooltip="state=proposed | confidence=medium | sourceRefs: cmd/server-main.go:537; cmd/utils.go:598,872"];
+    // state=proposed | confidence=medium | sourceRefs: cmd/server-main.go:537; cmd/utils.go:598,872
+  }
+  subgraph cluster_4 {
+    label="BLOCKED - needs a new seam, not an injection";
+    style=rounded;
+    blockObjAPI [shape=cylinder, style="filled", fillcolor="#ffd9d9", label="ObjectLayer (9) + ObjectInfo (1) + ObjectOptions (1)\\n+ itemOrErr (6) + WalkOptions (1)\\nWalk's channel type is unexported to cmd\\n=> 5-method config-object seam\\nGet/Put/Delete/Stat/ListConfigItems, with\\nisErrObjectNotFound -> errConfigNotFound\\nmapped in the cmd adapter", tooltip="state=proposed | confidence=high | sourceRefs: cmd/object-api-interface.go; cmd/iam-object-store.go:884"];
+    // state=proposed | confidence=high | sourceRefs: cmd/object-api-interface.go; cmd/iam-object-store.go:884
+    blockStore [shape=box, style="filled", fillcolor="#ffd9d9", label="the other direction: cmd reads sys.store.*\\nfrom 29 sites\\n=> IAMSys must grow narrow pass-through\\nmethods, or the store must be exported", tooltip="state=current | confidence=high | sourceRefs: cmd/site-replication.go; cmd/admin-handlers-users.go:2298"];
+    // state=current | confidence=high | sourceRefs: cmd/site-replication.go; cmd/admin-handlers-users.go:2298
+  }
+  iamLogic -> iamTarget [label="move once every edge below is cut", penwidth=2, tooltip="type=replaces | confidence=high | sourceRefs: docs/fork/backlog.md (item 2)"];
+  // type=replaces | confidence=high | sourceRefs: docs/fork/backlog.md (item 2)
+  iamLogic -> moveLayout [label="moves with the package", tooltip="type=moves-with | confidence=high | sourceRefs: -"];
+  // type=moves-with | confidence=high | sourceRefs: -
+  iamLogic -> sharedErr [label="identity must survive -> Deps fields", color="#cc0000", tooltip="type=depends-on | confidence=high | sourceRefs: cmd/api-errors.go:2155"];
+  // type=depends-on | confidence=high | sourceRefs: cmd/api-errors.go:2155
+  iamLogic -> injectGlobals [label="becomes Deps hooks", tooltip="type=depends-on | confidence=high | sourceRefs: -"];
+  // type=depends-on | confidence=high | sourceRefs: -
+  iamLogic -> blockObjAPI [label="becomes a narrower interface", color="#cc0000", tooltip="type=depends-on | confidence=high | sourceRefs: -"];
+  // type=depends-on | confidence=high | sourceRefs: -
+  iamLogic -> stdlibBits [label="replaced", style=dashed, tooltip="type=depends-on | confidence=high | sourceRefs: -"];
+  // type=depends-on | confidence=high | sourceRefs: -
+}
