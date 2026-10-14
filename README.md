@@ -1,15 +1,14 @@
 > [!NOTE]
-> **THIS REPOSITORY IS NO LONGER MAINTAINED.**
+> **This repository is a maintained community fork of MinIO**, released under the GNU AGPL v3.0 license.
 >
-> **Alternatives:**
-> - **[AIStor Free](https://min.io/download)** — Full-featured, standalone edition for community use (free license)
-> - **[AIStor Enterprise](https://min.io/pricing)** — Distributed edition with commercial support
+> - Support and contributions run through this repository: use the [issue tracker](https://github.com/fly88oj/minoss/issues) and read the [Contributor's Guide](CONTRIBUTING.md).
+> - This fork's release path publishes binaries to the GitHub Releases page of <https://github.com/fly88oj/minoss> and multi-arch images to `ghcr.io/fly88oj/minoss`, as defined in `.github/workflows/release.yml` (see `docs/adr/0002-fork-independence.md`).
 
 ---
 
 # MinIO Quickstart Guide
 
-[![Slack](https://slack.min.io/slack?type=svg)](https://slack.min.io) [![Docker Pulls](https://img.shields.io/docker/pulls/minio/minio.svg?maxAge=604800)](https://hub.docker.com/r/minio/minio/) [![license](https://img.shields.io/badge/license-AGPL%20V3-blue)](https://github.com/minio/minio/blob/master/LICENSE)
+[![Docker Pulls](https://img.shields.io/docker/pulls/minio/minio.svg?maxAge=604800)](https://hub.docker.com/r/minio/minio/) [![license](https://img.shields.io/badge/license-AGPL%20V3-blue)](https://github.com/minio/minio/blob/master/LICENSE)
 
 [![MinIO](https://raw.githubusercontent.com/minio/minio/master/.github/logo.svg?sanitize=true)](https://min.io)
 
@@ -30,9 +29,7 @@ We designed MinIO as Open Source software for the Open Source software community
 All usage of MinIO in your application stack requires validation against AGPLv3 obligations, which include but are not limited to the release of modified code to the community from which you have benefited. Any commercial/proprietary usage of the AGPLv3 software, including repackaging or reselling services/features, is done at your own risk.
 
 The AGPLv3 provides no obligation by any party to support, maintain, or warranty the original or any modified work.
-All support is provided on a best-effort basis through Github and our [Slack](https://slack.min.io) channel, and any member of the community is welcome to contribute and assist others in their usage of the software.
-
-MinIO [AIStor](https://www.min.io/product/aistor) includes enterprise-grade support and licensing for workloads which require commercial or proprietary usage and production-level SLA/SLO-backed support. For more information, [reach out for a quote](https://min.io/pricing).
+All support is provided on a best-effort basis through Github and our [issue tracker](https://github.com/fly88oj/minoss/issues), and any member of the community is welcome to contribute and assist others in their usage of the software.
 
 ## Source-Only Distribution
 
@@ -87,7 +84,7 @@ mc admin info local
 ```
 
 See [Test using MinIO Client `mc`](#test-using-minio-client-mc) for more information on using the `mc` commandline tool.
-For application developers, see <https://docs.min.io/enterprise/aistor-object-store/developers/sdk/> to view MinIO SDKs for supported languages.
+For application developers, see <https://docs.min.io/community/minio-object-store/index.html> to view MinIO SDKs for supported languages.
 
 > [!NOTE]
 > Production environments using compiled-from-source MinIO binaries do so at their own risk.
@@ -157,11 +154,11 @@ Follow the MinIO Client [Quickstart Guide](https://docs.min.io/community/minio-o
 - [The MinIO documentation website](https://docs.min.io/community/minio-object-store/index.html)
 - [MinIO Erasure Code Overview](https://docs.min.io/community/minio-object-store/operations/concepts/erasure-coding.html)
 - [Use `mc` with MinIO Server](https://docs.min.io/community/minio-object-store/reference/minio-mc.html)
-- [Use `minio-go` SDK with MinIO Server](https://docs.min.io/enterprise/aistor-object-store/developers/sdk/go/)
+- [Use `minio-go` SDK with MinIO Server](https://docs.min.io/community/minio-object-store/developers/go/minio-go.html)
 
 ## Contribute to MinIO Project
 
-Please follow MinIO [Contributor's Guide](https://github.com/minio/minio/blob/master/CONTRIBUTING.md) for guidance on making new contributions to the repository.
+Please follow MinIO [Contributor's Guide](CONTRIBUTING.md) for guidance on making new contributions to the repository.
 
 ## License
 

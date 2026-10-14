@@ -1,4 +1,4 @@
-# Compression Guide [![Slack](https://slack.min.io/slack?type=svg)](https://slack.min.io)
+# Compression Guide
 
 MinIO server allows streaming compression to ensure efficient disk space usage.
 Compression happens inflight, i.e objects are compressed before being written to disk(s).
@@ -75,7 +75,7 @@ See [CRIME TLS](https://en.wikipedia.org/wiki/CRIME) as an example of this.
 
 Therefore, compression is disabled when encrypting by default, and must be enabled separately.
 
-Consult our security experts on [SUBNET](https://min.io/pricing) to help you evaluate if
+Open a [GitHub issue](https://github.com/fly88oj/minoss/issues) if you need help evaluating whether
 your setup can use this feature combination safely.
 
 To enable compression+encryption use:

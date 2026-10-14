@@ -80,7 +80,7 @@ Reviewers ensure MinIO’s commit history remains a clear, reliable record. Resp
 
 - **Small PRs**: Easier to review, faster to merge. Split large changes logically.
 - **Clear Commits**: Use `git rebase -i` to refine history before submitting.
-- **Engage Early**: Discuss complex changes in issues or Slack (https://slack.min.io) before coding.
+- **Engage Early**: Discuss complex changes in issues or issue tracker (https://github.com/fly88oj/minoss/issues) before coding.
 - **Be Responsive**: Address reviewer feedback promptly to keep PRs moving.
 - **Learn from Reviews**: Use feedback to improve future contributions.
 

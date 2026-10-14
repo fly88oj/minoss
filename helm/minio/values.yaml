@@ -516,7 +516,6 @@ postJob:
 ## when Chart is deployed
 environment:
   ## Please refer for comprehensive list https://docs.min.io/community/minio-object-store/reference/minio-server/minio-server.html
-  ## MINIO_SUBNET_LICENSE: "License key obtained from https://subnet.min.io"
   ## MINIO_BROWSER: "off"
 
 ## The name of a secret in the same kubernetes namespace which contain secret values

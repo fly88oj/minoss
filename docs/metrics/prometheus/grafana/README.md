@@ -1,4 +1,6 @@
-# How to monitor MinIO server with Grafana [![Slack](https://slack.min.io/slack?type=svg)](https://slack.min.io)
+# How to monitor MinIO server with Grafana
+
+> **Removed in this fork** — the metrics v1 and v2 scrape endpoints were removed in `86cada680`. The dashboards in this directory query v2 metric names (for example `minio_cluster_health_erasure_set_online_drives`, `minio_node_process_resident_memory_bytes`) that this build no longer serves, so their panels will show no data until the queries are rewritten against metrics v3. v3 serves one endpoint per collector group under `/minio/metrics/v3/<collector>` and derives names from the path (the erasure-set drive counts above live on `/minio/metrics/v3/cluster/erasure-set` as `minio_cluster_erasure_set_online_drives_count`); append `?list` to any collector path to obtain the names it serves.
 
 [Grafana](https://grafana.com/) allows you to query, visualize, alert on and understand your metrics no matter where they are stored. Create, explore, and share dashboards with your team and foster a data driven culture.
 

@@ -9,11 +9,9 @@ assignees: ''
 
 ## IMPORTANT NOTES
 
-**Community Edition**: MinIO community edition is now source-only. Install via `go install github.com/minio/minio@latest`
+**About this fork**: Issues here are for the minoss fork, built from this repository (see `make build`). Reports about an upstream MinIO release belong upstream.
 
-**Feature Requests**: We are no longer accepting feature requests for the community edition. For feature requests and enterprise support, please subscribe to [MinIO Enterprise Support](https://min.io/pricing).
-
-**Urgent Issues**: If this case is urgent or affects production, please subscribe to [SUBNET](https://min.io/pricing) for 24/7 enterprise support.
+**Feature Requests**: We are no longer accepting feature requests for the community edition.
 
 <!--- Provide a general summary of the issue in the Title above -->
 

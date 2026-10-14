@@ -34,11 +34,11 @@ For optimal production setup MinIO recommends Linux kernel version 4.x and later
 | Maximum length for '/' separated object name segment                            | 255                                                                             |
 | Maximum number of versions per object                                           | 10000 (can be configured to higher values but we do not recommend beyond 10000) |
 
-> NOTE:  While MinIO does not implement an upper boundary on buckets, your cluster's hardware has natural limits that depend on the workload and its scaling patterns. We strongly recommend [MinIO SUBNET](https://min.io/pricing) for architecture and sizing guidance for your production use case.
+> NOTE:  While MinIO does not implement an upper boundary on buckets, your cluster's hardware has natural limits that depend on the workload and its scaling patterns. For architecture and sizing guidance for your production use case, ask through [GitHub issues](https://github.com/fly88oj/minoss/issues).
 
 ## List of Amazon S3 APIs not supported on MinIO
 
-We found the following APIs to be redundant or less useful outside of AWS S3. If you have a different view on any of the APIs we missed, please consider opening a [GitHub issue](https://github.com/minio/minio/issues) with relevant details on why MinIO must implement them.
+We found the following APIs to be redundant or less useful outside of AWS S3. If you have a different view on any of the APIs we missed, please consider opening a [GitHub issue](https://github.com/fly88oj/minoss/issues) with relevant details on why MinIO must implement them.
 
 ### List of Amazon S3 Bucket APIs not supported on MinIO
 

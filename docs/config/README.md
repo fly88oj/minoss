@@ -1,4 +1,4 @@
-# MinIO Server Config Guide [![Slack](https://slack.min.io/slack?type=svg)](https://slack.min.io) [![Docker Pulls](https://img.shields.io/docker/pulls/minio/minio.svg?maxAge=604800)](https://hub.docker.com/r/minio/minio/)
+# MinIO Server Config Guide [![Docker Pulls](https://img.shields.io/docker/pulls/minio/minio.svg?maxAge=604800)](https://hub.docker.com/r/minio/minio/)
 
 ## Configuration Directory
 
@@ -180,7 +180,6 @@ notify_amqp           publish bucket notifications to AMQP endpoints
 notify_kafka          publish bucket notifications to Kafka endpoints
 notify_mqtt           publish bucket notifications to MQTT endpoints
 notify_nats           publish bucket notifications to NATS endpoints
-notify_nsq            publish bucket notifications to NSQ endpoints
 notify_mysql          publish bucket notifications to MySQL databases
 notify_postgres       publish bucket notifications to Postgres databases
 notify_elasticsearch  publish bucket notifications to Elasticsearch endpoints

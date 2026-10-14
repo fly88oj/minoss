@@ -1,5 +1,7 @@
 # Cluster Metrics
 
+> **Removed in this fork** — the metrics v1 and v2 scrape endpoints (`/minio/prometheus/metrics` and `/minio/v2/metrics/{cluster,bucket,node,resource}`) were removed in `86cada680`. Every URL and every metric name listed in this document belongs to those removed v2 endpoints and is not served by this build. This build serves metrics v3 under `/minio/metrics/v3/<collector>` with different metric names; request a collector path with `?list` to obtain the metrics it actually exposes.
+
 MinIO collects the following metrics at the cluster level.
 Metrics may include one or more labels, such as the server that calculated that metric.
 

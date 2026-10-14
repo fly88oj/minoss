@@ -2,6 +2,8 @@
 
 ## **1. Cloud-native Architecture**
 
+> **Removed in this fork** — the S3 Select subsystem (the SQL `SELECT` API) was removed in `42ee30e5a`; the `S3/SQL SELECT API` access mentioned below does not apply to this build. Spark, Hive and MapReduce reach MinIO over the standard S3 API only, and the configuration steps in this document are unaffected.
+
 ![cloud-native](https://github.com/minio/minio/blob/master/docs/bigdata/images/image1.png?raw=true "cloud native architecture")
 
 Kubernetes manages stateless Spark and Hive containers elastically on the compute nodes. Spark has native scheduler integration with Kubernetes. Hive, for legacy reasons, uses YARN scheduler on top of Kubernetes.

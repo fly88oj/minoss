@@ -1,5 +1,7 @@
 # How to configure Prometheus AlertManager
 
+> **Removed in this fork** — the metrics v2 scrape endpoints were removed in `86cada680`, and with them the `minio_cluster_health_erasure_set_status` metric used in the example rule below. This build serves the per-erasure-set gauges (`minio_cluster_erasure_set_*`, labelled `pool_id` and `set_id`) on `/minio/metrics/v3/cluster/erasure-set`; append `?list` to that path to see the metric names it exposes and adapt the rule expression before using the examples below.
+
 Alerting with prometheus is two step process. First we setup alerts in Prometheus server and then we need to send alerts to the AlertManager.
 Prometheus AlertManager is the component that manages sending, inhibition and silencing of the alerts generated from Prometheus. The AlertManager can be configured to send alerts to variety of receivers. Refer [Prometheus AlertManager receivers](https://prometheus.io/docs/alerting/latest/configuration/#receiver) for more details.
 

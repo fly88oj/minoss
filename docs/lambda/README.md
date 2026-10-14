@@ -1,5 +1,7 @@
 # Object Lambda
 
+> **Removed in this fork** — the Object Lambda subsystem was removed in `86cada680`; everything below (the `MINIO_LAMBDA_WEBHOOK_*` environment variables, the `arn:minio:s3-object-lambda::...:webhook` ARNs and the `lambdaArn` request parameter) no longer has any effect. `GetObject?lambdaArn` is no longer routed and the `lambda_webhook` config sub-system implementation (`internal/config/lambda`) is gone, so configuring a lambda target does nothing.
+
 MinIO's Object Lambda implementation allows for transforming your data to serve unique data format requirements for each application. For example, a dataset created by an ecommerce application might include personally identifiable information (PII). When the same data is processed for analytics, PII should be redacted. However, if the same dataset is used for a marketing campaign, you might need to enrich the data with additional details, such as information from the customer loyalty database.
 
 MinIO's Object Lambda, enables application developers to process data retrieved from MinIO before returning it to an application. You can register a Lambda Function target on MinIO, once successfully registered it can be used to transform the data for application GET requests on demand.

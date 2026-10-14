@@ -1,4 +1,4 @@
-# MinIO Bucket Notification Guide [![Slack](https://slack.min.io/slack?type=svg)](https://slack.min.io)
+# MinIO Bucket Notification Guide
 
 Events occurring on objects in a bucket can be monitored using bucket event notifications.
 
@@ -39,7 +39,6 @@ Bucket events can be published to the following targets:
 | [`AMQP`](#AMQP)                   | [`Redis`](#Redis)           | [`MySQL`](#MySQL)               |
 | [`MQTT`](#MQTT)                   | [`NATS`](#NATS)             | [`Apache Kafka`](#apache-kafka) |
 | [`Elasticsearch`](#Elasticsearch) | [`PostgreSQL`](#PostgreSQL) | [`Webhooks`](#webhooks)         |
-| [`NSQ`](#NSQ)                     |                             |                                 |
 
 ## Prerequisites
 
@@ -53,7 +52,6 @@ notify_amqp           publish bucket notifications to AMQP endpoints
 notify_kafka          publish bucket notifications to Kafka endpoints
 notify_mqtt           publish bucket notifications to MQTT endpoints
 notify_nats           publish bucket notifications to NATS endpoints
-notify_nsq            publish bucket notifications to NSQ endpoints
 notify_mysql          publish bucket notifications to MySQL databases
 notify_postgres       publish bucket notifications to Postgres databases
 notify_elasticsearch  publish bucket notifications to Elasticsearch endpoints
@@ -625,10 +623,6 @@ token                             (string)    NATS token
 tls                               (on|off)    set to 'on' to enable TLS
 tls_skip_verify                   (on|off)    trust server TLS without verification, defaults to "on" (verify)
 ping_interval                     (duration)  client ping commands interval in s,m,h,d. Disabled by default
-streaming                         (on|off)    set to 'on', to use streaming NATS server
-streaming_async                   (on|off)    set to 'on', to enable asynchronous publish
-streaming_max_pub_acks_in_flight  (number)    number of messages to publish without waiting for ACKs
-streaming_cluster_id              (string)    unique ID for NATS streaming cluster
 cert_authority                    (string)    path to certificate chain of the target NATS server
 client_cert                       (string)    client cert for NATS mTLS auth
 client_key                        (string)    client cert key for NATS mTLS auth
@@ -653,10 +647,6 @@ MINIO_NOTIFY_NATS_TOKEN                             (string)    NATS token
 MINIO_NOTIFY_NATS_TLS                               (on|off)    set to 'on' to enable TLS
 MINIO_NOTIFY_NATS_TLS_SKIP_VERIFY                   (on|off)    trust server TLS without verification, defaults to "on" (verify)
 MINIO_NOTIFY_NATS_PING_INTERVAL                     (duration)  client ping commands interval in s,m,h,d. Disabled by default
-MINIO_NOTIFY_NATS_STREAMING                         (on|off)    set to 'on', to use streaming NATS server
-MINIO_NOTIFY_NATS_STREAMING_ASYNC                   (on|off)    set to 'on', to enable asynchronous publish
-MINIO_NOTIFY_NATS_STREAMING_MAX_PUB_ACKS_IN_FLIGHT  (number)    number of messages to publish without waiting for ACKs
-MINIO_NOTIFY_NATS_STREAMING_CLUSTER_ID              (string)    unique ID for NATS streaming cluster
 MINIO_NOTIFY_NATS_CERT_AUTHORITY                    (string)    path to certificate chain of the target NATS server
 MINIO_NOTIFY_NATS_CLIENT_CERT                       (string)    client cert for NATS mTLS auth
 MINIO_NOTIFY_NATS_CLIENT_KEY                        (string)    client cert key for NATS mTLS auth
@@ -669,14 +659,16 @@ To update the configuration, use `mc admin config get` command to get the curren
 
 ```sh
 $ mc admin config get myminio/ notify_nats
-notify_nats:1 password="yoursecret" streaming_max_pub_acks_in_flight="10" subject="" address="0.0.0.0:4222"  token="" username="yourusername" ping_interval="0" queue_limit="0" tls="off" tls_skip_verify="off" streaming_async="on" queue_dir="" streaming_cluster_id="test-cluster" streaming_enable="on"
+notify_nats:1 password="yoursecret" subject="" address="0.0.0.0:4222"  token="" username="yourusername" ping_interval="0" queue_limit="0" tls="off" tls_skip_verify="off" queue_dir=""
 ```
 
 Use `mc admin config set` command to update the configuration for the deployment.Restart MinIO server to reflect config changes. `bucketevents` is the subject used by NATS in this example.
 
 ```sh
-mc admin config set myminio notify_nats:1 password="yoursecret" streaming_max_pub_acks_in_flight="10" subject="" address="0.0.0.0:4222"  token="" username="yourusername" ping_interval="0" queue_limit="0" tls="off" streaming_async="on" queue_dir="" streaming_cluster_id="test-cluster" streaming_enable="on"
+mc admin config set myminio notify_nats:1 password="yoursecret" subject="" address="0.0.0.0:4222"  token="" username="yourusername" ping_interval="0" queue_limit="0" tls="off" queue_dir=""
 ```
+
+> **Removed in this fork** — NATS Streaming (STAN) support was removed in `fd292ed3a`; the `streaming*` keys and their `MINIO_NOTIFY_NATS_STREAMING_*` environment variables no longer exist and configuring them has no effect. Core NATS and JetStream (`jetstream` key) remain supported.
 
 MinIO server also supports [NATS Streaming mode](http://nats.io/documentation/streaming/nats-streaming-intro/) that offers additional functionality like `At-least-once-delivery`, and `Publisher rate limiting`. To configure MinIO server to send notifications to NATS Streaming server, update the MinIO server configuration file as follows:
 
@@ -747,6 +739,8 @@ go run nats.go
 2016/10/12 06:51:26 Subscribing to subject 'bucketevents'
 2016/10/12 06:51:33 Received message '{"EventType":"s3:ObjectCreated:Put","Key":"images/myphoto.jpg","Records":[{"eventVersion":"2.0","eventSource":"aws:s3","awsRegion":"","eventTime":"2016-10-12T13:51:33Z","eventName":"s3:ObjectCreated:Put","userIdentity":{"principalId":"minio"},"requestParameters":{"sourceIPAddress":"[::1]:57106"},"responseElements":{},"s3":{"s3SchemaVersion":"1.0","configurationId":"Config","bucket":{"name":"images","ownerIdentity":{"principalId":"minio"},"arn":"arn:aws:s3:::images"},"object":{"key":"myphoto.jpg","size":56060,"eTag":"1d97bf45ecb37f7a7b699418070df08f","sequencer":"147CCD1AE054BFD0"}}}],"level":"info","msg":"","time":"2016-10-12T06:51:33-07:00"}
 ```
+
+> **Removed in this fork** — NATS Streaming (STAN) support was removed in `fd292ed3a`. The sample program below uses the `stan.go` client, a dependency this fork no longer ships, and no STAN target exists to publish to; use the core NATS example above instead.
 
 If you use NATS Streaming server, check out this sample program below to log the bucket notification added to NATS.
 
@@ -845,7 +839,7 @@ Received a message: {"EventType":"s3:ObjectCreated:Put","Key":"images/myphoto.jp
 >
 > Please make sure this step is carried out, without this step PostgreSQL notification targets will not work,
 > an error message will be shown on the console upon server upgrade/restart, make sure to follow the above
-> instructions appropriately. For further questions please join our <https://slack.min.io>
+> instructions appropriately. For further questions please join our [issue tracker](https://github.com/fly88oj/minoss/issues)
 
 Install [PostgreSQL](https://www.postgresql.org/) database server. For illustrative purposes, we have set the "postgres" user password as `password` and created a database called `minio_events` to store the events.
 
@@ -978,7 +972,7 @@ key                 |                      value
 >
 > Please make sure this step is carried out, without this step MySQL notification targets will not work,
 > an error message will be shown on the console upon server upgrade/restart, make sure to follow the above
-> instructions appropriately. For further questions please join our <https://slack.min.io>
+> instructions appropriately. For further questions please join our [issue tracker](https://github.com/fly88oj/minoss/issues)
 
 Install MySQL from [here](https://dev.mysql.com/downloads/mysql/). For illustrative purposes, we have set the root password as `password` and created a database called `miniodb` to store the events.
 
@@ -1353,6 +1347,8 @@ mc ls myminio/images-thumbnail
 ```
 
 ## Publish MinIO events to NSQ
+
+> **Removed in this fork** — the NSQ event target was removed in `fd292ed3a`: this build does not compile in an NSQ target, the `MINIO_NOTIFY_NSQ_*` environment variables are not read, `notify_nsq` is no longer part of the server's config help, and no `arn:minio:sqs::1:nsq` ARN is printed at start-up. The steps below therefore have no effect.
 
 Install an NSQ Daemon from [here](https://nsq.io/). Or use the following Docker
 command for starting an nsq daemon:

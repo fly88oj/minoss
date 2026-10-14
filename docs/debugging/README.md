@@ -1,4 +1,4 @@
-# MinIO Server Debugging Guide [![Slack](https://slack.min.io/slack?type=svg)](https://slack.min.io) [![Docker Pulls](https://img.shields.io/docker/pulls/minio/minio.svg?maxAge=604800)](https://hub.docker.com/r/minio/minio/)
+# MinIO Server Debugging Guide [![Docker Pulls](https://img.shields.io/docker/pulls/minio/minio.svg?maxAge=604800)](https://hub.docker.com/r/minio/minio/)
 
 ## HTTP Trace
 
@@ -29,6 +29,8 @@ mc admin trace --all --verbose myminio
 ```
 
 ## Subnet Health
+
+> **Changed in this fork** — SUBNET registration and callhome were removed in `d56daada8`: this build has no SUBNET account, API key or phone-home upload path, and the `subnet` and `callhome` config sub-systems (`internal/config/subnet`, `internal/config/callhome`) are gone. The health diagnostics API itself is retained (`GET /minio/admin/v3/healthinfo`), so the `mc support diagnostics` workflow below still collects and writes the bundle locally.
 
 Subnet Health diagnostics help ensure that the underlying infrastructure that runs MinIO is configured correctly, and is functioning properly. This test is one-shot long running one, that is recommended to be run as soon as the cluster is first provisioned, and each time a failure scenario is encountered. Note that the test incurs majority of the available resources on the system. Care must be taken when using this to debug failure scenario, so as to prevent larger outages. Health tests can be triggered using `mc support diagnostics` command.
 

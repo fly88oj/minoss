@@ -1,6 +1,11 @@
-# MinIO Docker Quickstart Guide [![Slack](https://slack.min.io/slack?type=svg)](https://slack.min.io) [![Docker Pulls](https://img.shields.io/docker/pulls/minio/minio.svg?maxAge=604800)](https://hub.docker.com/r/minio/minio/)
+# MinIO Docker Quickstart Guide [![Docker Pulls](https://img.shields.io/docker/pulls/minio/minio.svg?maxAge=604800)](https://hub.docker.com/r/minio/minio/)
 
 See our web documentation on [Deploying MinIO in Standalone Mode](Deploy Standalone MinIO in a Container) for a more structured tutorial on deploying MinIO in a container.
+
+> [!NOTE]
+> The image names below are upstream MinIO builds. This fork's release path publishes multi-arch images to
+> `ghcr.io/fly88oj/minoss` and binaries to the GitHub Releases page of <https://github.com/fly88oj/minoss>,
+> as defined in `.github/workflows/release.yml`.
 
 ## Prerequisites
 

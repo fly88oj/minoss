@@ -1,9 +1,10 @@
-# How to monitor MinIO server with Prometheus? [![Slack](https://slack.min.io/slack?type=svg)](https://slack.min.io)
+# How to monitor MinIO server with Prometheus?
 
 [Prometheus](https://prometheus.io) is a cloud-native monitoring platform. Prometheus offers a multi-dimensional data model with time series data identified by metric name and key/value pairs. The data collection happens via a pull model over HTTP/HTTPS. Users looking to monitor their MinIO instances can point Prometheus configuration to scrape data from following endpoints. 
 
-- MinIO exports Prometheus compatible data by default as an authorized endpoint at `/minio/v2/metrics/cluster`. 
-- MinIO exports Prometheus compatible data by default which is bucket centric as an authorized endpoint at `/minio/v2/metrics/bucket`.
+> **Removed in this fork** — the metrics v1 and v2 scrape endpoints (`/minio/prometheus/metrics` and `/minio/v2/metrics/{cluster,bucket,node,resource}`) were removed in `86cada680`. Only the metrics v3 endpoints, `/minio/metrics/v3/<collector>`, are served; the examples below use them.
+
+MinIO exports Prometheus compatible data by default as an authorized endpoint per collector group under `/minio/metrics/v3`, for example `/minio/metrics/v3/cluster/health` for cluster health and `/minio/metrics/v3/bucket/api/<bucket-name>` for bucket centric metrics.
 
 This document explains how to setup Prometheus and configure it to scrape data from MinIO servers.
 
@@ -49,9 +50,9 @@ minio server ~/test
 
 > If MinIO is configured to expose metrics without authentication, you don't need to use `mc` to generate prometheus config. You can skip reading further and move to 3.2 section.
 
-The Prometheus endpoint in MinIO requires authentication by default. Prometheus supports a bearer token approach to authenticate prometheus scrape requests, override the default Prometheus config with the one generated using mc. To generate a Prometheus config for an alias, use [mc](https://docs.min.io/community/minio-object-store/reference/minio-mc.html#quickstart) as follows `mc admin prometheus generate <alias> [METRIC-TYPE]`. The valid values for METRIC-TYPE are `cluster`, `node`, `bucket` and `resource` and if not mentioned, it defaults to `cluster`.
+The Prometheus endpoint in MinIO requires authentication by default. Prometheus supports a bearer token approach to authenticate prometheus scrape requests, override the default Prometheus config with the one generated using mc. To generate a Prometheus config for an alias, use [mc](https://docs.min.io/community/minio-object-store/reference/minio-mc.html#quickstart) as follows `mc admin prometheus generate <alias> [METRIC-TYPE]`. The `cluster`, `node`, `bucket` and `resource` METRIC-TYPE values addressed the v2 endpoints removed in `86cada680`; metrics v3 exposes one endpoint per collector group instead, so a scrape job is needed per `/minio/metrics/v3/<collector>` path you want to collect.
 
-The command will generate the `scrape_configs` section of the prometheus.yml as follows:
+The command will generate the `scrape_configs` section of the prometheus.yml as follows, adjust `metrics_path` to the collector group you need:
 
 ##### Cluster
 
@@ -59,7 +60,7 @@ The command will generate the `scrape_configs` section of the prometheus.yml as 
 scrape_configs:
 - job_name: minio-job
   bearer_token: <secret>
-  metrics_path: /minio/v2/metrics/cluster
+  metrics_path: /minio/metrics/v3/cluster/health
   scheme: http
   static_configs:
   - targets: ['localhost:9000']
@@ -70,7 +71,7 @@ scrape_configs:
 ```yaml
 - job_name: minio-job-bucket
   bearer_token: <secret>
-  metrics_path: /minio/v2/metrics/bucket
+  metrics_path: /minio/metrics/v3/bucket/api/<bucket-name>
   scheme: http
   static_configs:
   - targets: ['localhost:9000']
@@ -81,7 +82,7 @@ scrape_configs:
 ```yaml
 - job_name: minio-job-node
   bearer_token: <secret>
-  metrics_path: /minio/v2/metrics/node
+  metrics_path: /minio/metrics/v3/system/process
   scheme: http
   static_configs:
   - targets: ['localhost:9000']
@@ -92,7 +93,7 @@ scrape_configs:
 ```yaml
 - job_name: minio-job-resource
   bearer_token: <secret>
-  metrics_path: /minio/v2/metrics/resource
+  metrics_path: /minio/metrics/v3/system/drive
   scheme: http
   static_configs:
   - targets: ['localhost:9000']
@@ -108,7 +109,7 @@ This can be collected from any server once per collection.
 ```yaml
 scrape_configs:
 - job_name: minio-job
-  metrics_path: /minio/v2/metrics/cluster
+  metrics_path: /minio/metrics/v3/cluster/health
   scheme: http
   static_configs:
   - targets: ['localhost:9000']
@@ -119,7 +120,7 @@ scrape_configs:
 ```yaml
 scrape_configs:
 - job_name: minio-job-bucket
-  metrics_path: /minio/v2/metrics/bucket
+  metrics_path: /minio/metrics/v3/bucket/api/<bucket-name>
   scheme: http
   static_configs:
   - targets: ['localhost:9000']
@@ -134,7 +135,7 @@ grafana can visualize them for all the nodes
 ```yaml
 scrape_configs:
 - job_name: minio-job
-  metrics_path: /minio/v2/metrics/node
+  metrics_path: /minio/metrics/v3/system/process
   scheme: http
   static_configs:
   - targets: ['server1:9000','server2:9000','server3:9000','server4:9000']
@@ -147,7 +148,7 @@ Optionally you can also collect resource metrics.
 ```yaml
 scrape_configs:
 - job_name: minio-job
-  metrics_path: /minio/v2/metrics/resource
+  metrics_path: /minio/metrics/v3/system/drive
   scheme: http
   static_configs:
   - targets: ['localhost:9000']
@@ -175,15 +176,16 @@ After Prometheus is configured, you can use Grafana to visualize MinIO metrics. 
 
 ## List of metrics exposed by MinIO
 
-- MinIO exports Prometheus compatible data by default as an authorized endpoint at `/minio/v2/metrics/cluster`. 
-- MinIO exports Prometheus compatible data by default which is bucket centric as an authorized endpoint at `/minio/v2/metrics/bucket`.
-- MinIO exports Prometheus compatible data by default which is node centric as an authorized endpoint at `/minio/v2/metrics/node`.
-- MinIO exports Prometheus compatible data by default which is resource centric as an authorized endpoint at `/minio/v2/metrics/resource`.
+- MinIO exports Prometheus compatible data by default as an authorized endpoint per collector group under `/minio/metrics/v3`, e.g. `/minio/metrics/v3/cluster/health`.
+- MinIO exports bucket centric data as an authorized endpoint at `/minio/metrics/v3/bucket/api/<bucket-name>` and `/minio/metrics/v3/bucket/replication/<bucket-name>`.
+- MinIO exports node and resource centric data as authorized endpoints at `/minio/metrics/v3/system/*` and `/minio/metrics/v3/debug/go`.
 
-All of these can be accessed via Prometheus dashboard. A sample list of exposed metrics along with their definition is available on our public demo server at
+All of these can be accessed via Prometheus dashboard. Every collector path also
+serves a listing request, which returns the metrics that path can expose along
+with their definition, e.g:
 
 ```sh
-curl https://play.min.io/minio/v2/metrics/cluster
+curl -H "Authorization: Bearer <secret>" "http://localhost:9000/minio/metrics/v3/cluster/health?list"
 ```
 
 ### List of metrics reported Cluster and Bucket level
