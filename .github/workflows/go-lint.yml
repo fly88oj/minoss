@@ -40,3 +40,18 @@ jobs:
           make
           make test
           make test-race
+
+  no-new-globals:
+    name: Guard - no new global* vars in cmd/
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check additions
+        run: |
+          git fetch origin master --depth=1
+          if git diff -U0 origin/master...HEAD -- cmd/ | grep -E '^\+\s*(var\s+)?global[A-Z]'; then
+            echo "::error::Adding package-level global* variables in cmd/ is not allowed - see CONTRIBUTING.md and docs/fork/backlog.md"
+            exit 1
+          fi

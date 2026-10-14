@@ -80,3 +80,13 @@ To remove a dependency
 ### What are the coding guidelines for MinIO?
 
 ``MinIO`` is fully conformant with Golang style. Refer: [Effective Go](https://github.com/golang/go/wiki/CodeReviewComments) article from Golang project. If you observe offending code, please feel free to send a pull request or ping us on [Slack](https://slack.min.io).
+
+## minoss fork rules (2026-10)
+
+This is a community fork; upstream MinIO community edition is in maintenance mode. In addition to the original contribution rules above:
+
+- **No new package-level mutable globals in `cmd/`.** The package already carries ~165 `global*` variables that block isolated testing. New subsystems must take dependencies via constructor parameters and live under `internal/`. When you touch code that reads a global for the *last* time in a subsystem being extracted, replace the read with an injected dependency.
+- **New `internal/` packages must ship tests that run in parallel** (`t.Parallel()`) and do not mutate process state. This is the acceptance bar for the incremental `cmd/` → `internal/` extraction (see `docs/fork/backlog.md`).
+- **No re-growth of removed subsystems.** S3 Select, Object Lambda, legacy metrics v1/v2, SUBNET/callhome, self-update from dl.min.io, and the NSQ/STAN event targets were removed deliberately (see `docs/adr/`). Do not reintroduce them.
+- **Dependencies:** prefer the standard library; a new direct dependency needs a justification in the PR description (what it does, why stdlib/short code can't). New `minio/*` dependency pins must be immutable tags or commit SHAs, not mutable branches.
+- **Feature removals are breaking changes** and belong in releases with a clear changelog entry and an ADR when they change externally visible behavior.
