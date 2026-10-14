@@ -45,7 +45,6 @@ import (
 
 	objectlock "github.com/minio/minio/internal/bucket/object/lock"
 	"github.com/minio/minio/internal/bucket/versioning"
-	levent "github.com/minio/minio/internal/config/lambda/event"
 	"github.com/minio/minio/internal/event"
 	"github.com/minio/minio/internal/hash"
 	"github.com/minio/pkg/v3/policy"
@@ -438,10 +437,6 @@ const (
 	ErrPostPolicyConditionInvalidFormat
 
 	ErrInvalidChecksum
-
-	// Lambda functions
-	ErrLambdaARNInvalid
-	ErrLambdaARNNotFound
 
 	// New Codes for GetObjectAttributes and GetObjectVersionAttributes
 	ErrInvalidAttributeName
@@ -2099,16 +2094,6 @@ var errorCodes = errorCodeMap{
 		Description:    "Invalid checksum provided.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-	ErrLambdaARNInvalid: {
-		Code:           "LambdaARNInvalid",
-		Description:    "The specified lambda ARN is invalid",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
-	ErrLambdaARNNotFound: {
-		Code:           "LambdaARNNotFound",
-		Description:    "The specified lambda ARN does not exist",
-		HTTPStatusCode: http.StatusNotFound,
-	},
 	ErrPolicyAlreadyAttached: {
 		Code:           "XMinioPolicyAlreadyAttached",
 		Description:    "The specified policy is already attached.",
@@ -2413,10 +2398,6 @@ func toAPIErrorCode(ctx context.Context, err error) (apiErr APIErrorCode) {
 		apiErr = ErrARNNotification
 	case *event.ErrARNNotFound:
 		apiErr = ErrARNNotification
-	case *levent.ErrInvalidARN:
-		apiErr = ErrLambdaARNInvalid
-	case *levent.ErrARNNotFound:
-		apiErr = ErrLambdaARNNotFound
 	case *event.ErrUnknownRegion:
 		apiErr = ErrRegionNotification
 	case *event.ErrInvalidFilterName:

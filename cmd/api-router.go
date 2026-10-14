@@ -360,10 +360,6 @@ func registerAPIRouter(router *mux.Router) {
 		router.Methods(http.MethodGet).Path("/{object:.+}").
 			HandlerFunc(s3APIMiddleware(api.GetObjectLegalHoldHandler)).
 			Queries("legal-hold", "")
-		// GetObject with lambda ARNs
-		router.Methods(http.MethodGet).Path("/{object:.+}").
-			HandlerFunc(s3APIMiddleware(api.GetObjectLambdaHandler, traceHdrsS3HFlag)).
-			Queries("lambdaArn", "{lambdaArn:.*}")
 		// GetObject
 		router.Methods(http.MethodGet).Path("/{object:.+}").
 			HandlerFunc(s3APIMiddleware(api.GetObjectHandler, traceHdrsS3HFlag))

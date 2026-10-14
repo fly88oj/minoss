@@ -22,11 +22,9 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"net/http"
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -36,20 +34,15 @@ import (
 	"github.com/minio/minio/internal/cachevalue"
 	xioutil "github.com/minio/minio/internal/ioutil"
 	"github.com/minio/minio/internal/logger"
-	"github.com/minio/minio/internal/mcontext"
 	"github.com/minio/minio/internal/rest"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/procfs"
 )
 
 //go:generate msgp -file=$GOFILE -unexported -io=false
 
 var (
-	nodeCollector           *minioNodeCollector
-	clusterCollector        *minioClusterCollector
-	bucketCollector         *minioBucketCollector
 	peerMetricsGroups       []*MetricsGroupV2
 	bucketPeerMetricsGroups []*MetricsGroupV2
 )
@@ -59,22 +52,10 @@ var (
 const v2MetricsMaxBuckets = 100
 
 func init() {
-	clusterMetricsGroups := []*MetricsGroupV2{
-		getNodeHealthMetrics(MetricsGroupOpts{dependGlobalNotificationSys: true}),
-		getClusterStorageMetrics(MetricsGroupOpts{dependGlobalObjectAPI: true}),
-		getClusterTierMetrics(MetricsGroupOpts{dependGlobalObjectAPI: true}),
-		getClusterUsageMetrics(MetricsGroupOpts{dependGlobalObjectAPI: true}),
-		getKMSMetrics(MetricsGroupOpts{dependGlobalObjectAPI: true, dependGlobalKMS: true}),
-		getClusterHealthMetrics(MetricsGroupOpts{dependGlobalObjectAPI: true}),
-		getIAMNodeMetrics(MetricsGroupOpts{dependGlobalAuthNPlugin: true, dependGlobalIAMSys: true}),
-		getReplicationSiteMetrics(MetricsGroupOpts{dependGlobalSiteReplicationSys: true}),
-		getBatchJobsMetrics(MetricsGroupOpts{dependGlobalObjectAPI: true}),
-	}
-
 	peerMetricsGroups = []*MetricsGroupV2{
 		getGoMetrics(),
 		getHTTPMetrics(MetricsGroupOpts{}),
-		getNotificationMetrics(MetricsGroupOpts{dependGlobalLambdaTargetList: true}),
+		getNotificationMetrics(MetricsGroupOpts{}),
 		getMinioProcMetrics(),
 		getMinioVersionMetrics(),
 		getNetworkMetrics(),
@@ -88,40 +69,10 @@ func init() {
 		getTierMetrics(),
 	}
 
-	allMetricsGroups := func() (allMetrics []*MetricsGroupV2) {
-		allMetrics = append(allMetrics, clusterMetricsGroups...)
-		allMetrics = append(allMetrics, peerMetricsGroups...)
-		return allMetrics
-	}()
-
-	nodeGroups := []*MetricsGroupV2{
-		getNodeHealthMetrics(MetricsGroupOpts{dependGlobalNotificationSys: true}),
-		getHTTPMetrics(MetricsGroupOpts{}),
-		getNetworkMetrics(),
-		getMinioVersionMetrics(),
-		getS3TTFBMetric(),
-		getTierMetrics(),
-		getNotificationMetrics(MetricsGroupOpts{dependGlobalLambdaTargetList: true}),
-		getDistLockMetrics(MetricsGroupOpts{dependGlobalIsDistErasure: true, dependGlobalLockServer: true}),
-		getIAMNodeMetrics(MetricsGroupOpts{dependGlobalAuthNPlugin: true, dependGlobalIAMSys: true}),
-		getLocalStorageMetrics(MetricsGroupOpts{dependGlobalObjectAPI: true}),
-		getReplicationNodeMetrics(MetricsGroupOpts{dependGlobalObjectAPI: true, dependBucketTargetSys: true}),
-	}
-
-	bucketMetricsGroups := []*MetricsGroupV2{
-		getBucketUsageMetrics(MetricsGroupOpts{dependGlobalObjectAPI: true}),
-		getHTTPMetrics(MetricsGroupOpts{bucketOnly: true}),
-		getBucketTTFBMetric(),
-	}
-
 	bucketPeerMetricsGroups = []*MetricsGroupV2{
 		getHTTPMetrics(MetricsGroupOpts{bucketOnly: true}),
 		getBucketTTFBMetric(),
 	}
-
-	nodeCollector = newMinioCollectorNode(nodeGroups)
-	clusterCollector = newMinioClusterCollector(allMetricsGroups)
-	bucketCollector = newMinioBucketCollector(bucketMetricsGroups)
 }
 
 // MetricNamespace is top level grouping of metrics to create the metric name.
@@ -172,7 +123,6 @@ const (
 	iamSubsystem              MetricSubsystem = "iam"
 	kmsSubsystem              MetricSubsystem = "kms"
 	notifySubsystem           MetricSubsystem = "notify"
-	lambdaSubsystem           MetricSubsystem = "lambda"
 	auditSubsystem            MetricSubsystem = "audit"
 	webhookSubsystem          MetricSubsystem = "webhook"
 )
@@ -385,11 +335,6 @@ func (g *MetricsGroupV2) RegisterRead(read func(context.Context) []MetricV2) {
 			}
 			if g.metricsGroupOpts.dependGlobalKMS {
 				if GlobalKMS == nil {
-					return []MetricV2{}, nil
-				}
-			}
-			if g.metricsGroupOpts.dependGlobalLambdaTargetList {
-				if globalLambdaTargetList == nil {
 					return []MetricV2{}, nil
 				}
 			}
@@ -2870,80 +2815,6 @@ func getNotificationMetrics(opts MetricsGroupOpts) *MetricsGroupV2 {
 				})
 			}
 		}
-
-		lstats := globalLambdaTargetList.Stats()
-		for _, st := range lstats.TargetStats {
-			metrics = append(metrics, MetricV2{
-				Description: MetricDescription{
-					Namespace: minioNamespace,
-					Subsystem: lambdaSubsystem,
-					Name:      "active_requests",
-					Help:      "Number of in progress requests",
-				},
-				VariableLabels: map[string]string{"target_id": st.ID.ID, "target_name": st.ID.Name},
-				Value:          float64(st.ActiveRequests),
-			})
-			metrics = append(metrics, MetricV2{
-				Description: MetricDescription{
-					Namespace: minioNamespace,
-					Subsystem: lambdaSubsystem,
-					Name:      "total_requests",
-					Help:      "Total number of requests sent since start",
-					Type:      counterMetric,
-				},
-				VariableLabels: map[string]string{"target_id": st.ID.ID, "target_name": st.ID.Name},
-				Value:          float64(st.TotalRequests),
-			})
-			metrics = append(metrics, MetricV2{
-				Description: MetricDescription{
-					Namespace: minioNamespace,
-					Subsystem: lambdaSubsystem,
-					Name:      "failed_requests",
-					Help:      "Total number of requests that failed to send since start",
-					Type:      counterMetric,
-				},
-				VariableLabels: map[string]string{"target_id": st.ID.ID, "target_name": st.ID.Name},
-				Value:          float64(st.FailedRequests),
-			})
-		}
-
-		// Audit and system:
-		audit := logger.CurrentStats()
-		for id, st := range audit {
-			metrics = append(metrics, MetricV2{
-				Description: MetricDescription{
-					Namespace: minioNamespace,
-					Subsystem: auditSubsystem,
-					Name:      "target_queue_length",
-					Help:      "Number of unsent messages in queue for target",
-					Type:      gaugeMetric,
-				},
-				VariableLabels: map[string]string{"target_id": id},
-				Value:          float64(st.QueueLength),
-			})
-			metrics = append(metrics, MetricV2{
-				Description: MetricDescription{
-					Namespace: minioNamespace,
-					Subsystem: auditSubsystem,
-					Name:      "total_messages",
-					Help:      "Total number of messages sent since start",
-					Type:      counterMetric,
-				},
-				VariableLabels: map[string]string{"target_id": id},
-				Value:          float64(st.TotalMessages),
-			})
-			metrics = append(metrics, MetricV2{
-				Description: MetricDescription{
-					Namespace: minioNamespace,
-					Subsystem: auditSubsystem,
-					Name:      "failed_messages",
-					Help:      "Total number of messages that failed to send since start",
-					Type:      counterMetric,
-				},
-				VariableLabels: map[string]string{"target_id": id},
-				Value:          float64(st.FailedMessages),
-			})
-		}
 		return metrics
 	})
 	return mg
@@ -4027,170 +3898,6 @@ func getKMSMetrics(opts MetricsGroupOpts) *MetricsGroupV2 {
 	return mg
 }
 
-func collectMetric(metric MetricV2, labels []string, values []string, metricName string, out chan<- prometheus.Metric) {
-	if metric.Description.Type == histogramMetric {
-		if metric.Histogram == nil {
-			return
-		}
-		for k, v := range metric.Histogram {
-			pmetric, err := prometheus.NewConstMetric(
-				prometheus.NewDesc(
-					prometheus.BuildFQName(string(metric.Description.Namespace),
-						string(metric.Description.Subsystem),
-						string(metric.Description.Name)),
-					metric.Description.Help,
-					append(labels, metric.HistogramBucketLabel),
-					metric.StaticLabels,
-				),
-				prometheus.GaugeValue,
-				float64(v),
-				append(values, k)...)
-			if err != nil {
-				// Enable for debugging
-				if serverDebugLog {
-					bugLogIf(GlobalContext, fmt.Errorf("unable to validate prometheus metric (%w) %v+%v", err, values, metric.Histogram))
-				}
-			} else {
-				out <- pmetric
-			}
-		}
-		return
-	}
-	metricType := prometheus.GaugeValue
-	if metric.Description.Type == counterMetric {
-		metricType = prometheus.CounterValue
-	}
-	pmetric, err := prometheus.NewConstMetric(
-		prometheus.NewDesc(
-			prometheus.BuildFQName(string(metric.Description.Namespace),
-				string(metric.Description.Subsystem),
-				string(metric.Description.Name)),
-			metric.Description.Help,
-			labels,
-			metric.StaticLabels,
-		),
-		metricType,
-		metric.Value,
-		values...)
-	if err != nil {
-		// Enable for debugging
-		if serverDebugLog {
-			bugLogIf(GlobalContext, fmt.Errorf("unable to validate prometheus metric (%w) %v", err, values))
-		}
-	} else {
-		out <- pmetric
-	}
-}
-
-//msgp:ignore minioBucketCollector
-type minioBucketCollector struct {
-	metricsGroups []*MetricsGroupV2
-	desc          *prometheus.Desc
-}
-
-func newMinioBucketCollector(metricsGroups []*MetricsGroupV2) *minioBucketCollector {
-	return &minioBucketCollector{
-		metricsGroups: metricsGroups,
-		desc:          prometheus.NewDesc("minio_bucket_stats", "Statistics exposed by MinIO server cluster wide per bucket", nil, nil),
-	}
-}
-
-// Describe sends the super-set of all possible descriptors of metrics
-func (c *minioBucketCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- c.desc
-}
-
-// Collect is called by the Prometheus registry when collecting metrics.
-func (c *minioBucketCollector) Collect(out chan<- prometheus.Metric) {
-	var wg sync.WaitGroup
-	publish := func(in <-chan MetricV2) {
-		defer wg.Done()
-		for metric := range in {
-			labels, values := getOrderedLabelValueArrays(metric.VariableLabels)
-			collectMetric(metric, labels, values, "bucket", out)
-		}
-	}
-
-	// Call peer api to fetch metrics
-	wg.Add(2)
-	go publish(ReportMetrics(GlobalContext, c.metricsGroups))
-	go publish(globalNotificationSys.GetBucketMetrics(GlobalContext))
-	wg.Wait()
-}
-
-//msgp:ignore minioClusterCollector
-type minioClusterCollector struct {
-	metricsGroups []*MetricsGroupV2
-	desc          *prometheus.Desc
-}
-
-func newMinioClusterCollector(metricsGroups []*MetricsGroupV2) *minioClusterCollector {
-	return &minioClusterCollector{
-		metricsGroups: metricsGroups,
-		desc:          prometheus.NewDesc("minio_stats", "Statistics exposed by MinIO server per cluster", nil, nil),
-	}
-}
-
-// Describe sends the super-set of all possible descriptors of metrics
-func (c *minioClusterCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- c.desc
-}
-
-// Collect is called by the Prometheus registry when collecting metrics.
-func (c *minioClusterCollector) Collect(out chan<- prometheus.Metric) {
-	var wg sync.WaitGroup
-	publish := func(in <-chan MetricV2) {
-		defer wg.Done()
-		for metric := range in {
-			labels, values := getOrderedLabelValueArrays(metric.VariableLabels)
-			collectMetric(metric, labels, values, "cluster", out)
-		}
-	}
-
-	// Call peer api to fetch metrics
-	wg.Add(2)
-	go publish(ReportMetrics(GlobalContext, c.metricsGroups))
-	go publish(globalNotificationSys.GetClusterMetrics(GlobalContext))
-	wg.Wait()
-}
-
-// ReportMetrics reports serialized metrics to the channel passed for the metrics generated.
-func ReportMetrics(ctx context.Context, metricsGroups []*MetricsGroupV2) <-chan MetricV2 {
-	ch := make(chan MetricV2)
-	go func() {
-		defer xioutil.SafeClose(ch)
-		populateAndPublish(metricsGroups, func(m MetricV2) bool {
-			if m.VariableLabels == nil {
-				m.VariableLabels = make(map[string]string)
-			}
-			m.VariableLabels[serverName] = globalLocalNodeName
-			for {
-				select {
-				case ch <- m:
-					return true
-				case <-ctx.Done():
-					return false
-				}
-			}
-		})
-	}()
-	return ch
-}
-
-// minioNodeCollector is the Custom Collector
-//
-//msgp:ignore minioNodeCollector
-type minioNodeCollector struct {
-	metricsGroups []*MetricsGroupV2
-	desc          *prometheus.Desc
-}
-
-// Describe sends the super-set of all possible descriptors of metrics
-func (c *minioNodeCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- c.desc
-}
-
-// populateAndPublish populates and then publishes the metrics generated by the generator function.
 func populateAndPublish(metricsGroups []*MetricsGroupV2, publish func(m MetricV2) bool) {
 	for _, mg := range metricsGroups {
 		if mg == nil {
@@ -4204,59 +3911,6 @@ func populateAndPublish(metricsGroups []*MetricsGroupV2, publish func(m MetricV2
 	}
 }
 
-// Collect is called by the Prometheus registry when collecting metrics.
-func (c *minioNodeCollector) Collect(ch chan<- prometheus.Metric) {
-	// Expose MinIO's version information
-	minioVersionInfo.WithLabelValues(Version, CommitID).Set(1.0)
-
-	populateAndPublish(c.metricsGroups, func(metric MetricV2) bool {
-		labels, values := getOrderedLabelValueArrays(metric.VariableLabels)
-		values = append(values, globalLocalNodeName)
-		labels = append(labels, serverName)
-
-		if metric.Description.Type == histogramMetric {
-			if metric.Histogram == nil {
-				return true
-			}
-			for k, v := range metric.Histogram {
-				labels = append(labels, metric.HistogramBucketLabel)
-				values = append(values, k)
-				ch <- prometheus.MustNewConstMetric(
-					prometheus.NewDesc(
-						prometheus.BuildFQName(string(metric.Description.Namespace),
-							string(metric.Description.Subsystem),
-							string(metric.Description.Name)),
-						metric.Description.Help,
-						labels,
-						metric.StaticLabels,
-					),
-					prometheus.GaugeValue,
-					float64(v),
-					values...)
-			}
-			return true
-		}
-
-		metricType := prometheus.GaugeValue
-		if metric.Description.Type == counterMetric {
-			metricType = prometheus.CounterValue
-		}
-		ch <- prometheus.MustNewConstMetric(
-			prometheus.NewDesc(
-				prometheus.BuildFQName(string(metric.Description.Namespace),
-					string(metric.Description.Subsystem),
-					string(metric.Description.Name)),
-				metric.Description.Help,
-				labels,
-				metric.StaticLabels,
-			),
-			metricType,
-			metric.Value,
-			values...)
-		return true
-	})
-}
-
 func getOrderedLabelValueArrays(labelsWithValue map[string]string) (labels, values []string) {
 	labels = make([]string, 0, len(labelsWithValue))
 	values = make([]string, 0, len(labelsWithValue))
@@ -4265,150 +3919,6 @@ func getOrderedLabelValueArrays(labelsWithValue map[string]string) (labels, valu
 		values = append(values, v)
 	}
 	return labels, values
-}
-
-// newMinioCollectorNode describes the collector
-// and returns reference of minioCollector for version 2
-// It creates the Prometheus Description which is used
-// to define Metric and  help string
-func newMinioCollectorNode(metricsGroups []*MetricsGroupV2) *minioNodeCollector {
-	return &minioNodeCollector{
-		metricsGroups: metricsGroups,
-		desc:          prometheus.NewDesc("minio_stats", "Statistics exposed by MinIO server per node", nil, nil),
-	}
-}
-
-func metricsHTTPHandler(c prometheus.Collector, funcName string) http.Handler {
-	registry := prometheus.NewRegistry()
-
-	// Report all other metrics
-	logger.CriticalIf(GlobalContext, registry.Register(c))
-
-	// DefaultGatherers include golang metrics and process metrics.
-	gatherers := prometheus.Gatherers{
-		registry,
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tc, ok := r.Context().Value(mcontext.ContextTraceKey).(*mcontext.TraceCtxt)
-		if ok {
-			tc.FuncName = funcName
-			tc.ResponseRecorder.LogErrBody = true
-		}
-
-		mfs, err := gatherers.Gather()
-		if err != nil && len(mfs) == 0 {
-			writeErrorResponseJSON(r.Context(), w, toAdminAPIErr(r.Context(), err), r.URL)
-			return
-		}
-
-		contentType := expfmt.Negotiate(r.Header)
-		w.Header().Set("Content-Type", string(contentType))
-
-		enc := expfmt.NewEncoder(w, contentType)
-		for _, mf := range mfs {
-			if err := enc.Encode(mf); err != nil {
-				// client may disconnect for any reasons
-				// we do not have to log this.
-				return
-			}
-		}
-		if closer, ok := enc.(expfmt.Closer); ok {
-			closer.Close()
-		}
-	})
-}
-
-func metricsBucketHandler() http.Handler {
-	return metricsHTTPHandler(bucketCollector, "handler.MetricsBucket")
-}
-
-func metricsServerHandler() http.Handler {
-	registry := prometheus.NewRegistry()
-
-	// Report all other metrics
-	logger.CriticalIf(GlobalContext, registry.Register(clusterCollector))
-
-	// DefaultGatherers include golang metrics and process metrics.
-	gatherers := prometheus.Gatherers{
-		registry,
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tc, ok := r.Context().Value(mcontext.ContextTraceKey).(*mcontext.TraceCtxt)
-		if ok {
-			tc.FuncName = "handler.MetricsCluster"
-			tc.ResponseRecorder.LogErrBody = true
-		}
-
-		mfs, err := gatherers.Gather()
-		if err != nil && len(mfs) == 0 {
-			writeErrorResponseJSON(r.Context(), w, toAdminAPIErr(r.Context(), err), r.URL)
-			return
-		}
-
-		contentType := expfmt.Negotiate(r.Header)
-		w.Header().Set("Content-Type", string(contentType))
-
-		enc := expfmt.NewEncoder(w, contentType)
-		for _, mf := range mfs {
-			if err := enc.Encode(mf); err != nil {
-				// client may disconnect for any reasons
-				// we do not have to log this.
-				return
-			}
-		}
-		if closer, ok := enc.(expfmt.Closer); ok {
-			closer.Close()
-		}
-	})
-}
-
-func metricsNodeHandler() http.Handler {
-	registry := prometheus.NewRegistry()
-
-	logger.CriticalIf(GlobalContext, registry.Register(nodeCollector))
-	if err := registry.Register(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{
-		Namespace:    minioNamespace,
-		ReportErrors: true,
-	})); err != nil {
-		logger.CriticalIf(GlobalContext, err)
-	}
-	if err := registry.Register(prometheus.NewGoCollector()); err != nil {
-		logger.CriticalIf(GlobalContext, err)
-	}
-	gatherers := prometheus.Gatherers{
-		registry,
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tc, ok := r.Context().Value(mcontext.ContextTraceKey).(*mcontext.TraceCtxt)
-		if ok {
-			tc.FuncName = "handler.MetricsNode"
-			tc.ResponseRecorder.LogErrBody = true
-		}
-
-		mfs, err := gatherers.Gather()
-		if err != nil {
-			if len(mfs) == 0 {
-				writeErrorResponseJSON(r.Context(), w, toAdminAPIErr(r.Context(), err), r.URL)
-				return
-			}
-		}
-
-		contentType := expfmt.Negotiate(r.Header)
-		w.Header().Set("Content-Type", string(contentType))
-
-		enc := expfmt.NewEncoder(w, contentType)
-		for _, mf := range mfs {
-			if err := enc.Encode(mf); err != nil {
-				metricsLogIf(r.Context(), err)
-				return
-			}
-		}
-		if closer, ok := enc.(expfmt.Closer); ok {
-			closer.Close()
-		}
-	})
 }
 
 func toSnake(camel string) (snake string) {

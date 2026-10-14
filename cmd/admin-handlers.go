@@ -2008,7 +2008,7 @@ func getServerInfo(ctx context.Context, pools, metrics bool, r *http.Request) ma
 	log, audit := fetchLoggerInfo(ctx)
 
 	// Get the notification target info
-	notifyTarget := fetchLambdaInfo()
+	notifyTarget := fetchEventTargetInfo()
 
 	local := getLocalServerProperty(globalEndpoints, r, metrics)
 	servers := globalNotificationSys.ServerInfo(ctx, metrics)
@@ -2660,7 +2660,7 @@ func (a adminAPIHandlers) ServerInfoHandler(w http.ResponseWriter, r *http.Reque
 	writeSuccessResponseJSON(w, jsonBytes)
 }
 
-func fetchLambdaInfo() []map[string][]madmin.TargetIDStatus {
+func fetchEventTargetInfo() []map[string][]madmin.TargetIDStatus {
 	lambdaMap := make(map[string][]madmin.TargetIDStatus)
 
 	for _, tgt := range globalEventNotifier.Targets() {

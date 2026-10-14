@@ -139,24 +139,11 @@ func printServerCommonMsg(apiEndpoints []string) {
 	}
 
 	printEventNotifiers()
-	printLambdaTargets()
 }
 
 // Prints startup message for Object API access, prints link to our SDK documentation.
 func printObjectAPIMsg() {
 	logger.Startup(color.Blue("\nDocs: ") + "https://docs.min.io")
-}
-
-func printLambdaTargets() {
-	if globalLambdaTargetList == nil || globalLambdaTargetList.Empty() {
-		return
-	}
-
-	arnMsg := color.Blue("Object Lambda ARNs: ")
-	for _, arn := range globalLambdaTargetList.List(globalSite.Region()) {
-		arnMsg += color.Bold(fmt.Sprintf("%s ", arn))
-	}
-	logger.Startup(arnMsg + "\n")
 }
 
 // Prints bucket notification configurations.

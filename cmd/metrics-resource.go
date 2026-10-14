@@ -21,12 +21,10 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net/http"
 	"sync"
 	"time"
 
 	"github.com/minio/madmin-go/v3"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -66,13 +64,12 @@ const (
 )
 
 var (
-	resourceCollector *minioResourceCollector
+	resourceMetricsGroups []*MetricsGroupV2
 	// resourceMetricsMap is a map of subsystem to its metrics
 	resourceMetricsMap   map[MetricSubsystem]ResourceMetrics
 	resourceMetricsMapMu sync.RWMutex
 	// resourceMetricsHelpMap maps metric name to its help string
 	resourceMetricsHelpMap map[MetricName]string
-	resourceMetricsGroups  []*MetricsGroupV2
 	// initial values for drives (at the time  of server startup)
 	// used for calculating avg values for drive metrics
 	latestDriveStats      map[string]madmin.DiskIOStats
@@ -158,8 +155,6 @@ func init() {
 	resourceMetricsGroups = []*MetricsGroupV2{
 		getResourceMetrics(),
 	}
-
-	resourceCollector = newMinioResourceCollector(resourceMetricsGroups)
 }
 
 func getResourceKey(name MetricName, labels map[string]string) string {
@@ -379,44 +374,6 @@ func startResourceMetricsCollection() {
 }
 
 // minioResourceCollector is the Collector for resource metrics
-type minioResourceCollector struct {
-	metricsGroups []*MetricsGroupV2
-	desc          *prometheus.Desc
-}
-
-// Describe sends the super-set of all possible descriptors of metrics
-func (c *minioResourceCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- c.desc
-}
-
-// Collect is called by the Prometheus registry when collecting metrics.
-func (c *minioResourceCollector) Collect(out chan<- prometheus.Metric) {
-	var wg sync.WaitGroup
-	publish := func(in <-chan MetricV2) {
-		defer wg.Done()
-		for metric := range in {
-			labels, values := getOrderedLabelValueArrays(metric.VariableLabels)
-			collectMetric(metric, labels, values, "resource", out)
-		}
-	}
-
-	// Call peer api to fetch metrics
-	wg.Add(2)
-	go publish(ReportMetrics(GlobalContext, c.metricsGroups))
-	go publish(globalNotificationSys.GetResourceMetrics(GlobalContext))
-	wg.Wait()
-}
-
-// newMinioResourceCollector describes the collector
-// and returns reference of minio resource Collector
-// It creates the Prometheus Description which is used
-// to define Metric and  help string
-func newMinioResourceCollector(metricsGroups []*MetricsGroupV2) *minioResourceCollector {
-	return &minioResourceCollector{
-		metricsGroups: metricsGroups,
-		desc:          prometheus.NewDesc("minio_resource_stats", "Resource statistics exposed by MinIO server", nil, nil),
-	}
-}
 
 func prepareResourceMetrics(rm ResourceMetric, subSys MetricSubsystem, requireAvgMax bool) []MetricV2 {
 	help := resourceMetricsHelpMap[rm.Name]
@@ -485,9 +442,4 @@ func getResourceMetrics() *MetricsGroupV2 {
 		return metrics
 	})
 	return mg
-}
-
-// metricsResourceHandler is the prometheus handler for resource metrics
-func metricsResourceHandler() http.Handler {
-	return metricsHTTPHandler(resourceCollector, "handler.MetricsResource")
 }

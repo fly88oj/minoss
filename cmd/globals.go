@@ -52,7 +52,6 @@ import (
 	xhttp "github.com/minio/minio/internal/http"
 	etcd "go.etcd.io/etcd/client/v3"
 
-	levent "github.com/minio/minio/internal/config/lambda/event"
 	"github.com/minio/minio/internal/event"
 	"github.com/minio/minio/internal/pubsub"
 	"github.com/minio/pkg/v3/certs"
@@ -229,7 +228,6 @@ var (
 
 	globalEventNotifier    *EventNotifier
 	globalNotifyTargetList *event.TargetList
-	globalLambdaTargetList *levent.TargetList
 
 	globalBucketMetadataSys *BucketMetadataSys
 	globalBucketMonitor     *bandwidth.Monitor

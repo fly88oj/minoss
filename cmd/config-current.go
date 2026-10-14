@@ -42,7 +42,6 @@ import (
 	idplugin "github.com/minio/minio/internal/config/identity/plugin"
 	xtls "github.com/minio/minio/internal/config/identity/tls"
 	"github.com/minio/minio/internal/config/ilm"
-	"github.com/minio/minio/internal/config/lambda"
 	"github.com/minio/minio/internal/config/notify"
 	"github.com/minio/minio/internal/config/policy/opa"
 	polplugin "github.com/minio/minio/internal/config/policy/plugin"
@@ -80,7 +79,6 @@ func initHelp() {
 		config.BrowserSubSys:        browser.DefaultKVS,
 	}
 	maps.Copy(kvs, notify.DefaultNotificationKVS)
-	maps.Copy(kvs, lambda.DefaultLambdaKVS)
 	if globalIsErasure {
 		kvs[config.StorageClassSubSys] = storageclass.DefaultKVS
 		kvs[config.HealSubSys] = heal.DefaultKVS
@@ -212,11 +210,6 @@ func initHelp() {
 			MultipleTargets: true,
 		},
 		config.HelpKV{
-			Key:             config.LambdaWebhookSubSys,
-			Description:     "manage remote lambda functions",
-			MultipleTargets: true,
-		},
-		config.HelpKV{
 			Key:         config.EtcdSubSys,
 			Description: "persist IAM assets externally to etcd",
 		},
@@ -272,7 +265,6 @@ func initHelp() {
 		config.NotifyRedisSubSys:    notify.HelpRedis,
 		config.NotifyWebhookSubSys:  notify.HelpWebhook,
 		config.NotifyESSubSys:       notify.HelpES,
-		config.LambdaWebhookSubSys:  lambda.HelpWebhook,
 		config.SubnetSubSys:         subnet.HelpSubnet,
 		config.CallhomeSubSys:       callhome.HelpCallhome,
 		config.DriveSubSys:          drive.HelpDrive,
@@ -428,12 +420,6 @@ func validateSubSysConfig(ctx context.Context, s config.Config, subSys string, o
 		}
 	}
 
-	if config.LambdaSubSystems.Contains(subSys) {
-		if err := lambda.TestSubSysLambdaTargets(GlobalContext, s, subSys, NewHTTPTransport()); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -535,12 +521,6 @@ func lookupConfigs(s config.Config, objAPI ObjectLayer) {
 	globalNotifyTargetList, err = notify.FetchEnabledTargets(GlobalContext, s, transport)
 	if err != nil {
 		configLogIf(ctx, fmt.Errorf("Unable to initialize notification target(s): %w", err))
-	}
-
-	bootstrapTraceMsg("initialize the lambda targets")
-	globalLambdaTargetList, err = lambda.FetchEnabledTargets(GlobalContext, s, transport)
-	if err != nil {
-		configLogIf(ctx, fmt.Errorf("Unable to initialize lambda target(s): %w", err))
 	}
 
 	bootstrapTraceMsg("applying the dynamic configuration")

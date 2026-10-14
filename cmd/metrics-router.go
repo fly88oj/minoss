@@ -26,12 +26,6 @@ import (
 )
 
 const (
-	prometheusMetricsPathLegacy     = "/prometheus/metrics"
-	prometheusMetricsV2ClusterPath  = "/v2/metrics/cluster"
-	prometheusMetricsV2BucketPath   = "/v2/metrics/bucket"
-	prometheusMetricsV2NodePath     = "/v2/metrics/node"
-	prometheusMetricsV2ResourcePath = "/v2/metrics/resource"
-
 	// Metrics v3 endpoints
 	metricsV3Path = "/metrics/v3"
 )
@@ -59,12 +53,6 @@ func registerMetricsRouter(router *mux.Router) {
 	if authType == prometheusPublic {
 		auth = NoAuthMiddleware
 	}
-
-	metricsRouter.Handle(prometheusMetricsPathLegacy, auth(metricsHandler()))
-	metricsRouter.Handle(prometheusMetricsV2ClusterPath, auth(metricsServerHandler()))
-	metricsRouter.Handle(prometheusMetricsV2BucketPath, auth(metricsBucketHandler()))
-	metricsRouter.Handle(prometheusMetricsV2NodePath, auth(metricsNodeHandler()))
-	metricsRouter.Handle(prometheusMetricsV2ResourcePath, auth(metricsResourceHandler()))
 
 	// Metrics v3
 	metricsV3Server := newMetricsV3Server(auth)
