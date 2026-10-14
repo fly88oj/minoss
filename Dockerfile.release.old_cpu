@@ -1,44 +1,30 @@
 FROM golang:1.24-alpine AS build
 
 ARG TARGETARCH
-ARG RELEASE
+ARG RELEASE=dev
 
-ENV GOPATH=/go
 ENV CGO_ENABLED=0
 
-# Install curl and minisign
-RUN apk add -U --no-cache ca-certificates && \
-    apk add -U --no-cache curl && \
-    go install aead.dev/minisign/cmd/minisign@v0.2.1
+WORKDIR /build
 
-# Download minio binary and signature files
-RUN curl -s -q https://dl.min.io/server/minio/release/linux-${TARGETARCH}/archive/minio.${RELEASE} -o /go/bin/minio && \
-    curl -s -q https://dl.min.io/server/minio/release/linux-${TARGETARCH}/archive/minio.${RELEASE}.minisig -o /go/bin/minio.minisig && \
-    curl -s -q https://dl.min.io/server/minio/release/linux-${TARGETARCH}/archive/minio.${RELEASE}.sha256sum -o /go/bin/minio.sha256sum && \
-    chmod +x /go/bin/minio
+COPY . .
 
-# Download mc binary and signature files
-RUN curl -s -q https://dl.min.io/client/mc/release/linux-${TARGETARCH}/mc -o /go/bin/mc && \
-    curl -s -q https://dl.min.io/client/mc/release/linux-${TARGETARCH}/mc.minisig -o /go/bin/mc.minisig && \
-    curl -s -q https://dl.min.io/client/mc/release/linux-${TARGETARCH}/mc.sha256sum -o /go/bin/mc.sha256sum && \
-    chmod +x /go/bin/mc
+# Build minio from source (self-reliant release image, no dl.min.io).
+RUN go build -tags kqueue -trimpath -o /go/bin/minio && \
+    go install github.com/minio/mc@RELEASE.2025-08-13T08-35-41Z
 
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-       curl -L -s -q https://github.com/moparisthebest/static-curl/releases/latest/download/curl-${TARGETARCH} -o /go/bin/curl; \
-       chmod +x /go/bin/curl; \
-    fi
-
-# Verify binary signature using public key "RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGavRUN"
-RUN minisign -Vqm /go/bin/minio -x /go/bin/minio.minisig -P RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGav && \
-    minisign -Vqm /go/bin/mc -x /go/bin/mc.minisig -P RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGav
+# A static curl is needed by the health/liveness probes.
+COPY dockerscripts/download-static-curl.sh /build/download-static-curl
+RUN chmod +x /build/download-static-curl && \
+    /build/download-static-curl
 
 FROM registry.access.redhat.com/ubi8/ubi-micro:latest
 
 ARG RELEASE
 
 LABEL name="MinIO" \
-      vendor="MinIO Inc <dev@min.io>" \
-      maintainer="MinIO Inc <dev@min.io>" \
+      vendor="minoss fork of MinIO" \
+      maintainer="minoss maintainers" \
       version="${RELEASE}" \
       release="${RELEASE}" \
       summary="MinIO is a High Performance Object Storage, API compatible with Amazon S3 cloud storage service." \
@@ -49,16 +35,15 @@ ENV MINIO_ACCESS_KEY_FILE=access_key \
     MINIO_ROOT_USER_FILE=access_key \
     MINIO_ROOT_PASSWORD_FILE=secret_key \
     MINIO_KMS_SECRET_KEY_FILE=kms_master_key \
-    MINIO_UPDATE_MINISIGN_PUBKEY="RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGav" \
     MINIO_CONFIG_ENV_FILE=config.env \
     MC_CONFIG_DIR=/tmp/.mc
 
 RUN chmod -R 777 /usr/bin
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=build /go/bin/minio* /usr/bin/
-COPY --from=build /go/bin/mc* /usr/bin/
-COPY --from=build /go/bin/cur* /usr/bin/
+COPY --from=build /go/bin/minio /usr/bin/minio
+COPY --from=build /go/bin/mc /usr/bin/mc
+COPY --from=build /go/bin/curl* /usr/bin/
 
 COPY CREDITS /licenses/CREDITS
 COPY LICENSE /licenses/LICENSE

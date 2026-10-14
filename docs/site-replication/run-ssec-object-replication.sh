@@ -45,8 +45,8 @@ echo "done"
 
 if [ ! -f ./mc ]; then
 	echo -n "Downloading MinIO client ..."
-	wget -O mc https://dl.min.io/client/mc/release/linux-amd64/mc &&
-		chmod +x mc
+	go install github.com/minio/mc@RELEASE.2025-08-13T08-35-41Z &&
+		cp -a "$(go env GOPATH)/bin/mc" ./mc
 	echo "done"
 fi
 

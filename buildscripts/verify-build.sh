@@ -237,7 +237,7 @@ function __init__() {
 	## version is purposefully set to '3' for minio to migrate configuration file
 	echo '{"version": "3", "credential": {"accessKey": "minio", "secretKey": "minio123"}, "region": "us-east-1"}' >"$MINIO_CONFIG_DIR/config.json"
 
-	if ! wget -q -O "$FUNCTIONAL_TESTS" https://raw.githubusercontent.com/minio/mc/master/functional-tests.sh; then
+	if ! wget -q -O "$FUNCTIONAL_TESTS" https://raw.githubusercontent.com/minio/mc/RELEASE.2025-08-13T08-35-41Z/functional-tests.sh; then
 		echo "failed to download https://raw.githubusercontent.com/minio/mc/master/functional-tests.sh"
 		exit 1
 	fi

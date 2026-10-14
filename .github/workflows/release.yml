@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'RELEASE.*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  binaries:
+    name: Build ${{ matrix.osarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: linux
+            arch: ppc64le
+          - os: linux
+            arch: s390x
+          - os: linux
+            arch: arm
+          - os: linux
+            arch: 386
+          - os: linux
+            arch: mips64
+          - os: linux
+            arch: mips
+          - os: linux
+            arch: riscv64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
+          - os: freebsd
+            arch: amd64
+          - os: netbsd
+            arch: amd64
+          - os: openbsd
+            arch: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Build
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          # Tag RELEASE.YYYY-MM-DDTHH-MM-SSZ -> RFC3339 version + matching release tag.
+          VTIME=$(echo "${GITHUB_REF_NAME}" | sed 's/^RELEASE\.//; s/\([0-9]\+\)-\([0-9]\+\)-\([0-9]\+\)T\([0-9]\+\)-\([0-9]\+\)-\([0-9]\+\)Z/\1-\2-\3T\4:\5:\6Z/')
+          LDFLAGS="$(MINIO_RELEASE=RELEASE go run buildscripts/gen-ldflags.go "$VTIME")"
+          ext=""
+          if [ "${{ matrix.os }}" = "windows" ]; then ext=".exe"; fi
+          go build -tags kqueue -trimpath --ldflags "${LDFLAGS}" -o "minio-${{ matrix.os }}-${{ matrix.arch }}${ext}"
+          sha256sum "minio-${{ matrix.os }}-${{ matrix.arch }}${ext}" > "minio-${{ matrix.os }}-${{ matrix.arch }}${ext}.sha256sum"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: minio-${{ matrix.os }}-${{ matrix.arch }}
+          path: minio-${{ matrix.os }}-${{ matrix.arch }}*
+
+  github-release:
+    name: Publish GitHub release
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create release
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes dist/*
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+  docker:
+    name: Build and push container image
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.release
+          platforms: linux/amd64,linux/arm64,linux/ppc64le,linux/s390x
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:latest
+          build-args: |
+            RELEASE=${{ github.ref_name }}

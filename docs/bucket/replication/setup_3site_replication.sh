@@ -50,8 +50,11 @@ go install -v github.com/minio/mc@master
 cp -a $(go env GOPATH)/bin/mc ./mc
 
 if [ ! -f mc.RELEASE.2021-03-12T03-36-59Z ]; then
-	wget -q -O mc.RELEASE.2021-03-12T03-36-59Z https://dl.minio.io/client/mc/release/linux-amd64/archive/mc.RELEASE.2021-03-12T03-36-59Z &&
-		chmod +x mc.RELEASE.2021-03-12T03-36-59Z
+	legacy_mc_src=$(mktemp -d)
+	git clone --quiet --depth 1 --branch RELEASE.2021-03-12T03-36-59Z https://github.com/minio/mc "$legacy_mc_src" &&
+		(cd "$legacy_mc_src" && go build -o "$OLDPWD/mc.RELEASE.2021-03-12T03-36-59Z")
+	rm -rf "$legacy_mc_src"
+	chmod +x mc.RELEASE.2021-03-12T03-36-59Z
 fi
 
 minio server --address 127.0.0.1:9001 "http://127.0.0.1:9001/tmp/multisitea/data/disterasure/xl{1...4}" \
