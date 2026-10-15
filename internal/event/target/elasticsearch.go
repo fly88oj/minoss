@@ -32,7 +32,7 @@ import (
 	"strings"
 	"time"
 
-	elasticsearch7 "github.com/elastic/go-elasticsearch/v7"
+	"github.com/elastic/go-elasticsearch/v9"
 	"github.com/minio/highwayhash"
 	"github.com/minio/minio/internal/event"
 	xhttp "github.com/minio/minio/internal/http"
@@ -315,13 +315,13 @@ func (target *ElasticsearchTarget) checkAndInitClient(ctx context.Context) error
 		return nil
 	}
 
-	clientV7, err := newClientV7(target.args)
+	client, err := newClientV9(target.args)
 	if err != nil {
 		return err
 	}
 
 	// Check es version to confirm if it is supported.
-	serverSupportStatus, version, err := clientV7.getServerSupportStatus(ctx)
+	serverSupportStatus, version, err := client.getServerSupportStatus(ctx)
 	if err != nil {
 		return err
 	}
@@ -334,7 +334,7 @@ func (target *ElasticsearchTarget) checkAndInitClient(ctx context.Context) error
 		return errors.New("there is no currently deprecated version of ES in MinIO")
 
 	case ESSSupported:
-		target.client = clientV7
+		target.client = client
 
 	default:
 		// ESSUnsupported case
@@ -392,13 +392,13 @@ func NewElasticsearchTarget(id string, args ElasticsearchArgs, loggerOnce logger
 
 // ES Client definitions and methods
 
-type esClientV7 struct {
-	*elasticsearch7.Client
+type esClientV9 struct {
+	*elasticsearch.Client
 }
 
-func newClientV7(args ElasticsearchArgs) (*esClientV7, error) {
+func newClientV9(args ElasticsearchArgs) (*esClientV9, error) {
 	// Client options
-	elasticConfig := elasticsearch7.Config{
+	elasticConfig := elasticsearch.Config{
 		Addresses:  []string{args.URL.String()},
 		Transport:  args.Transport,
 		MaxRetries: 10,
@@ -409,15 +409,14 @@ func newClientV7(args ElasticsearchArgs) (*esClientV7, error) {
 		elasticConfig.Password = args.Password
 	}
 	// Create a client
-	client, err := elasticsearch7.NewClient(elasticConfig)
+	client, err := elasticsearch.NewClient(elasticConfig)
 	if err != nil {
 		return nil, err
 	}
-	clientV7 := &esClientV7{client}
-	return clientV7, nil
+	return &esClientV9{client}, nil
 }
 
-func (c *esClientV7) getServerSupportStatus(ctx context.Context) (ESSupportStatus, string, error) {
+func (c *esClientV9) getServerSupportStatus(ctx context.Context) (ESSupportStatus, string, error) {
 	resp, err := c.Info(
 		c.Info.WithContext(ctx),
 	)
@@ -442,12 +441,12 @@ func (c *esClientV7) getServerSupportStatus(ctx context.Context) (ESSupportStatu
 	return ESSUnknown, "", fmt.Errorf("Unable to get ES Server Version - got INFO response: %v", m)
 }
 
-func (c *esClientV7) isAtleastV7() bool {
+func (c *esClientV9) isAtleastV7() bool {
 	return true
 }
 
 // createIndex - creates the index if it does not exist.
-func (c *esClientV7) createIndex(args ElasticsearchArgs) error {
+func (c *esClientV9) createIndex(args ElasticsearchArgs) error {
 	res, err := c.Indices.ResolveIndex([]string{args.Index})
 	if err != nil {
 		return err
@@ -484,7 +483,7 @@ func (c *esClientV7) createIndex(args ElasticsearchArgs) error {
 	return nil
 }
 
-func (c *esClientV7) ping(ctx context.Context, _ ElasticsearchArgs) (bool, error) {
+func (c *esClientV9) ping(ctx context.Context, _ ElasticsearchArgs) (bool, error) {
 	resp, err := c.Ping(
 		c.Ping.WithContext(ctx),
 	)
@@ -495,7 +494,7 @@ func (c *esClientV7) ping(ctx context.Context, _ ElasticsearchArgs) (bool, error
 	return !resp.IsError(), nil
 }
 
-func (c *esClientV7) entryExists(ctx context.Context, index string, key string) (bool, error) {
+func (c *esClientV9) entryExists(ctx context.Context, index string, key string) (bool, error) {
 	res, err := c.Exists(
 		index,
 		key,
@@ -508,7 +507,7 @@ func (c *esClientV7) entryExists(ctx context.Context, index string, key string) 
 	return !res.IsError(), nil
 }
 
-func (c *esClientV7) removeEntry(ctx context.Context, index string, key string) error {
+func (c *esClientV9) removeEntry(ctx context.Context, index string, key string) error {
 	exists, err := c.entryExists(ctx, index, key)
 	if err == nil && exists {
 		res, err := c.Delete(
@@ -528,7 +527,7 @@ func (c *esClientV7) removeEntry(ctx context.Context, index string, key string) 
 	return err
 }
 
-func (c *esClientV7) updateEntry(ctx context.Context, index string, key string, eventData event.Event) error {
+func (c *esClientV9) updateEntry(ctx context.Context, index string, key string, eventData event.Event) error {
 	doc := map[string]any{
 		"Records": []event.Event{eventData},
 	}
@@ -555,7 +554,7 @@ func (c *esClientV7) updateEntry(ctx context.Context, index string, key string, 
 	return nil
 }
 
-func (c *esClientV7) addEntry(ctx context.Context, index string, eventData event.Event) error {
+func (c *esClientV9) addEntry(ctx context.Context, index string, eventData event.Event) error {
 	doc := map[string]any{
 		"Records": []event.Event{eventData},
 	}
@@ -580,5 +579,5 @@ func (c *esClientV7) addEntry(ctx context.Context, index string, eventData event
 	return nil
 }
 
-func (c *esClientV7) stop() {
+func (c *esClientV9) stop() {
 }

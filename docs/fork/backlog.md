@@ -537,3 +537,22 @@ enterprise documentation" - was wrong and the inventory command was the reason:
 A link inventory can be regenerated with:
 
     grep -rn "slack\.min\.io\|subnet\.min\.io\|min\.io/pricing\|aistor\|dl\.min\.io" docs README.md CONTRIBUTING.md helm .github --include='*.md'
+
+## Dependency audit (2026-10-15)
+
+47 of 79 direct dependencies had updates; 46 applied in three gated
+batches (build+vet+targeted tests per batch, full suite at the end).
+Remaining on purpose:
+
+| Module | State | Why / replacement status |
+|---|---|---|
+| `minio/pkg/v3` v3.10.0 | v3.11.0 available | v3.11 changes `policy.AdminAction` types that the frozen `minio/console` pin does not compile against (bisected: v3.4–v3.6 break, v3.7+ OK until v3.11). Unblock by tracking a console update or vendoring a patch. |
+| `minio/console` | pseudo-version pin (2025-09-05), upstream frozen | DECIDED KEEP (2026-10-14). No newer tag exists; watch upstream for any revival. Largest transitive tree (~45 modules) - accepted cost. |
+| `elastic/go-elasticsearch/v9` v9.5.2 | **migrated from EOL v7 line** | v7 was unmaintained; the event target now compiles against v9 (API surface used: Info/Indices.{ResolveIndex,Create}/Exists/Delete/Update/Ping - all compatible). |
+| `minio/sio` v0.5.1 | upgraded from v0.4.1 | `AES_256_GCM` renamed to `AES_GCM`, same wire value (iota=0) - SSE encryption tests gate compatibility. |
+| `minio/mux` v1.10.1 | upgraded | gorilla/mux fork, maintenance-only; viable long-term alternative if it freezes: upstream gorilla/mux (revived) - drop-in for the small surface we use. |
+| `dchest/siphash`, `cespare/xxhash/v2`, `ncw/directio`, `klauspost/filepathx`, `klauspost/readahead`, `philhofer/fwd`, `valyala/bytebufferpool`, `puzpuzpuz/xsync/v3`, `gobwas/ws`, `minio/dnscache`, `secure-io/sio-go` | frozen/stable, no newer releases | Tiny, stable surfaces with no upstream activity needed; replacing them buys nothing. Revisit only on CVE or Go incompatibility. |
+
+Verification: build/vet green, whole-module golangci-lint 0 issues,
+internal suites + cmd broad suite (117s) green, govulncheck 0 reachable /
+0 imported (1 informational in an uncalled module).
