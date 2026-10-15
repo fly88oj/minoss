@@ -229,9 +229,11 @@ cite the symbol, they drift with every commit).
   modules exist because stored config encryption must stay decryptable;
   needs a migration path (decrypt-with-old, re-encrypt-with-new) before the
   old module can go.
-- **Console keep-or-cut** (largest single dependency tree, ~45 modules):
-  product decision pending community feedback; revisit after first fork
-  release.
+- ~~**Console keep-or-cut**~~ — **DECIDED: KEEP (2026-10-14, user)**. The web
+  UI is the lowest-friction management surface for non-CLI users (mc CLI,
+  S3 API and madmin-go remain the other three layers). The ~45-module
+  dependency tree is the accepted cost; revisit only if a maintenance
+  burden (e.g. another minio/console freeze) forces it.
 - **Module path** stays `github.com/minio/minio` for now — renaming touches
   every import and buys little; revisit only if we need to publish the
   module for direct import.
