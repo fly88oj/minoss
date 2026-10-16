@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/minio/minio/internal/event"
 	xhttp "github.com/minio/minio/internal/http"
 	"github.com/minio/minio/internal/pubsub"
+	"github.com/minio/pkg/v3/env"
 	"github.com/minio/pkg/v3/policy"
 )
 
@@ -98,7 +100,18 @@ func (evnot *EventNotifier) InitBucketTargets(ctx context.Context, objAPI Object
 	if err := evnot.targetList.Add(globalNotifyTargetList.Targets()...); err != nil {
 		return err
 	}
-	evnot.targetList = evnot.targetList.Init(runtime.GOMAXPROCS(0)) // TODO: make this configurable (y4m4)
+	// All targets share these workers to drain the single event queue; the
+	// default follows the CPUs, deployments with many slow targets can
+	// raise it via the env knob.
+	workers := runtime.GOMAXPROCS(0)
+	if envWorkers := env.Get("_MINIO_EVENT_TARGET_WORKERS", ""); envWorkers != "" {
+		if n, err := strconv.Atoi(envWorkers); err != nil {
+			bootLogIf(ctx, fmt.Errorf("invalid _MINIO_EVENT_TARGET_WORKERS value: %w", err))
+		} else if n > 0 {
+			workers = n
+		}
+	}
+	evnot.targetList = evnot.targetList.Init(workers)
 	return nil
 }
 

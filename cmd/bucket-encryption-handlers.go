@@ -18,6 +18,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
@@ -43,7 +44,7 @@ const (
 func (api objectAPIHandlers) PutBucketEncryptionHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutBucketEncryption")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objAPI := api.ObjectAPI()
 	if objAPI == nil {
@@ -129,7 +130,7 @@ func (api objectAPIHandlers) PutBucketEncryptionHandler(w http.ResponseWriter, r
 func (api objectAPIHandlers) GetBucketEncryptionHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketEncryption")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objAPI := api.ObjectAPI()
 	if objAPI == nil {
@@ -172,7 +173,7 @@ func (api objectAPIHandlers) GetBucketEncryptionHandler(w http.ResponseWriter, r
 func (api objectAPIHandlers) DeleteBucketEncryptionHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "DeleteBucketEncryption")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objAPI := api.ObjectAPI()
 	if objAPI == nil {

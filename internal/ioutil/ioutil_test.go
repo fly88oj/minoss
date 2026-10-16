@@ -41,17 +41,26 @@ func (w *sleepWriter) Close() error {
 	return nil
 }
 
+// testDur scales the deadline/sleep pairings uniformly in -short mode; the
+// assertions only depend on which side of the deadline each sleep lands on.
+func testDur(d time.Duration) time.Duration {
+	if testing.Short() {
+		return d / 10
+	}
+	return d
+}
+
 func TestDeadlineWorker(t *testing.T) {
-	err := RunWithDeadline(500*time.Millisecond, func() error {
-		time.Sleep(600 * time.Millisecond)
+	err := RunWithDeadline(testDur(500*time.Millisecond), func() error {
+		time.Sleep(testDur(600 * time.Millisecond))
 		return nil
 	})
 	if err != context.DeadlineExceeded {
 		t.Error("RunWithDeadline shouldn't be successful - should return context.DeadlineExceeded")
 	}
 
-	err = RunWithDeadline(500*time.Millisecond, func() error {
-		time.Sleep(450 * time.Millisecond)
+	err = RunWithDeadline(testDur(500*time.Millisecond), func() error {
+		time.Sleep(testDur(450 * time.Millisecond))
 		return nil
 	})
 	if err != nil {

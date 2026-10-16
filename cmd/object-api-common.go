@@ -19,6 +19,7 @@ package cmd
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/dustin/go-humanize"
 )
@@ -49,8 +50,10 @@ const (
 // Global object layer mutex, used for safely updating object layer.
 var globalObjLayerMutex sync.RWMutex
 
-// Global object layer, only accessed by globalObjectAPI.
-var globalObjectAPI ObjectLayer
+// Global object layer, only accessed through newObjectLayerFn/setObjectLayer.
+// Writes are rare (startup/teardown); reads happen on every API request, so
+// the value is held behind an atomic snapshot read instead of a mutex.
+var globalObjectAPI atomic.Pointer[ObjectLayer]
 
 type storageOpts struct {
 	cleanUp     bool

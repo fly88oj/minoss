@@ -18,6 +18,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/xml"
 	"io"
 	"net/http"
@@ -61,7 +62,7 @@ type accessControlPolicy struct {
 func (api objectAPIHandlers) PutBucketACLHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutBucketACL")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -123,7 +124,7 @@ func (api objectAPIHandlers) PutBucketACLHandler(w http.ResponseWriter, r *http.
 func (api objectAPIHandlers) GetBucketACLHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketACL")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -172,7 +173,7 @@ func (api objectAPIHandlers) GetBucketACLHandler(w http.ResponseWriter, r *http.
 func (api objectAPIHandlers) PutObjectACLHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutObjectACL")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -234,7 +235,7 @@ func (api objectAPIHandlers) PutObjectACLHandler(w http.ResponseWriter, r *http.
 func (api objectAPIHandlers) GetObjectACLHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetObjectACL")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]

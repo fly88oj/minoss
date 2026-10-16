@@ -365,9 +365,7 @@ func initTestServerWithBackend(ctx context.Context, t TestErrHandler, testServer
 	// Run TestServer.
 	testServer.Server = httptest.NewUnstartedServer(setCriticalErrorHandler(corsHandler(httpHandler)))
 
-	globalObjLayerMutex.Lock()
-	globalObjectAPI = objLayer
-	globalObjLayerMutex.Unlock()
+	setObjectLayer(objLayer)
 
 	// initialize peer rpc
 	host, port := mustSplitHostPort(testServer.Server.Listener.Addr().String())
@@ -429,9 +427,7 @@ func resetGlobalConfigPath() {
 
 // sets globalObjectAPI to `nil`.
 func resetGlobalObjectAPI() {
-	globalObjLayerMutex.Lock()
-	globalObjectAPI = nil
-	globalObjLayerMutex.Unlock()
+	setObjectLayer(nil)
 }
 
 // reset the value of the Global server config.
@@ -1702,9 +1698,7 @@ func ExecObjectLayerAPINilTest(t TestErrHandler, bucketName, objectName, instanc
 
 	// The  API handler gets the reference to the object layer via the global object Layer,
 	// setting it to `nil` in order test for handlers response for uninitialized object layer.
-	globalObjLayerMutex.Lock()
-	globalObjectAPI = nil
-	globalObjLayerMutex.Unlock()
+	setObjectLayer(nil)
 
 	// call the HTTP handler.
 	apiRouter.ServeHTTP(rec, req)
@@ -2070,17 +2064,13 @@ func registerAPIFunctions(muxRouter *mux.Router, objLayer ObjectLayer, apiFuncti
 
 	// All object storage operations are registered as HTTP handlers on `objectAPIHandlers`.
 	// When the handlers get a HTTP request they use the underlying ObjectLayer to perform operations.
-	globalObjLayerMutex.Lock()
-	globalObjectAPI = objLayer
-	globalObjLayerMutex.Unlock()
+	setObjectLayer(objLayer)
 
 	// When cache is enabled, Put and Get operations are passed
 	// to underlying cache layer to manage object layer operation and disk caching
 	// operation
 	api := objectAPIHandlers{
-		ObjectAPI: func() ObjectLayer {
-			return globalObjectAPI
-		},
+		ObjectAPI: newObjectLayerFn,
 	}
 
 	// Register ListBuckets	handler.

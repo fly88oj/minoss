@@ -601,7 +601,7 @@ func (sys *IAMSys) DeletePolicy(ctx context.Context, policyName string, notifyPe
 
 	for _, v := range policy.DefaultPolicies {
 		if v.Name == policyName {
-			if err := checkConfig(ctx, globalObjectAPI, getPolicyDocPath(policyName)); err != nil && err == errConfigNotFound {
+			if err := checkConfig(ctx, newObjectLayerFn(), getPolicyDocPath(policyName)); err != nil && err == errConfigNotFound {
 				return fmt.Errorf("inbuilt policy `%s` not allowed to be deleted", policyName)
 			}
 		}

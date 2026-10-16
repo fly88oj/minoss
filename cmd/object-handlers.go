@@ -533,7 +533,7 @@ func (api objectAPIHandlers) getObjectAttributesHandler(ctx context.Context, obj
 func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetObject")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objectAPI := api.ObjectAPI()
 	if objectAPI == nil {
@@ -711,7 +711,7 @@ func (api objectAPIHandlers) headObjectHandler(ctx context.Context, objectAPI Ob
 // This operation retrieves metadata and part metadata from an object without returning the object itself.
 func (api objectAPIHandlers) GetObjectAttributesHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetObjectAttributes")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objectAPI := api.ObjectAPI()
 	if objectAPI == nil {
@@ -735,7 +735,7 @@ func (api objectAPIHandlers) GetObjectAttributesHandler(w http.ResponseWriter, r
 // The HEAD operation retrieves metadata from an object without returning the object itself.
 func (api objectAPIHandlers) HeadObjectHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "HeadObject")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objectAPI := api.ObjectAPI()
 	if objectAPI == nil {
@@ -881,7 +881,7 @@ func isRemoteCallRequired(ctx context.Context, bucket string, objAPI ObjectLayer
 func (api objectAPIHandlers) CopyObjectHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "CopyObject")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objectAPI := api.ObjectAPI()
 	if objectAPI == nil {
@@ -1516,7 +1516,7 @@ func (api objectAPIHandlers) CopyObjectHandler(w http.ResponseWriter, r *http.Re
 //   - X-Amz-Copy-Source-Server-Side-Encryption-Customer-Key
 func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutObject")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objectAPI := api.ObjectAPI()
 	if objectAPI == nil {
@@ -1915,7 +1915,7 @@ func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Req
 // and the folder structures will be built out accordingly.
 func (api objectAPIHandlers) PutObjectExtractHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutObjectExtract")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objectAPI := api.ObjectAPI()
 	if objectAPI == nil {
@@ -2275,7 +2275,7 @@ func (api objectAPIHandlers) PutObjectExtractHandler(w http.ResponseWriter, r *h
 func (api objectAPIHandlers) DeleteObjectHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "DeleteObject")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -2464,7 +2464,7 @@ func (api objectAPIHandlers) DeleteObjectHandler(w http.ResponseWriter, r *http.
 func (api objectAPIHandlers) PutObjectLegalHoldHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutObjectLegalHold")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -2559,7 +2559,7 @@ func (api objectAPIHandlers) PutObjectLegalHoldHandler(w http.ResponseWriter, r 
 func (api objectAPIHandlers) GetObjectLegalHoldHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetObjectLegalHold")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -2621,7 +2621,7 @@ func (api objectAPIHandlers) GetObjectLegalHoldHandler(w http.ResponseWriter, r 
 func (api objectAPIHandlers) PutObjectRetentionHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutObjectRetention")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -2727,7 +2727,7 @@ func (api objectAPIHandlers) PutObjectRetentionHandler(w http.ResponseWriter, r 
 // GetObjectRetentionHandler - get object retention configuration of object,
 func (api objectAPIHandlers) GetObjectRetentionHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetObjectRetention")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -2798,7 +2798,7 @@ type objectTagging struct {
 // GetObjectTaggingHandler - GET object tagging
 func (api objectAPIHandlers) GetObjectTaggingHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetObjectTagging")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -2890,7 +2890,7 @@ func (api objectAPIHandlers) GetObjectTaggingHandler(w http.ResponseWriter, r *h
 // PutObjectTaggingHandler - PUT object tagging
 func (api objectAPIHandlers) PutObjectTaggingHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutObjectTagging")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -3003,7 +3003,7 @@ func (api objectAPIHandlers) PutObjectTaggingHandler(w http.ResponseWriter, r *h
 // DeleteObjectTaggingHandler - DELETE object tagging
 func (api objectAPIHandlers) DeleteObjectTaggingHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "DeleteObjectTagging")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objAPI := api.ObjectAPI()
 	if objAPI == nil {
@@ -3109,7 +3109,7 @@ func (api objectAPIHandlers) DeleteObjectTaggingHandler(w http.ResponseWriter, r
 // ----------
 func (api objectAPIHandlers) PostRestoreObjectHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PostRestoreObject")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
 	object, err := unescapePath(vars["object"])

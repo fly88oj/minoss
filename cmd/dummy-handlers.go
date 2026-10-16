@@ -18,6 +18,7 @@
 package cmd
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/minio/minio/internal/logger"
@@ -33,7 +34,7 @@ import (
 func (api objectAPIHandlers) GetBucketWebsiteHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketWebsite")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -65,7 +66,7 @@ func (api objectAPIHandlers) GetBucketWebsiteHandler(w http.ResponseWriter, r *h
 func (api objectAPIHandlers) GetBucketAccelerateHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketAccelerate")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -98,7 +99,7 @@ func (api objectAPIHandlers) GetBucketAccelerateHandler(w http.ResponseWriter, r
 func (api objectAPIHandlers) GetBucketRequestPaymentHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketRequestPayment")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -132,7 +133,7 @@ func (api objectAPIHandlers) GetBucketRequestPaymentHandler(w http.ResponseWrite
 func (api objectAPIHandlers) GetBucketLoggingHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketLogging")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -170,7 +171,7 @@ func (api objectAPIHandlers) DeleteBucketWebsiteHandler(w http.ResponseWriter, r
 func (api objectAPIHandlers) GetBucketCorsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketCors")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -200,7 +201,7 @@ func (api objectAPIHandlers) GetBucketCorsHandler(w http.ResponseWriter, r *http
 func (api objectAPIHandlers) PutBucketCorsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutBucketCors")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -230,7 +231,7 @@ func (api objectAPIHandlers) PutBucketCorsHandler(w http.ResponseWriter, r *http
 func (api objectAPIHandlers) DeleteBucketCorsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "DeleteBucketCors")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]

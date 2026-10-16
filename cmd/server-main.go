@@ -55,7 +55,7 @@ import (
 	"github.com/minio/minio/internal/logger"
 	"github.com/minio/pkg/v3/certs"
 	"github.com/minio/pkg/v3/env"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // ServerFlags - server command specific flags
@@ -991,12 +991,18 @@ func serverMain(ctx *cli.Context) {
 
 	// Initialize users credentials and policies in background right after config has initialized.
 	go func() {
-		bootstrapTrace("globalIAMSys.Init", func() {
-			globalIAMSys.Init(GlobalContext, newObject, globalEtcdClient, globalRefreshIAMInterval)
-		})
+		// The console's OpenID provider list is built once from the IAM
+		// discovery results, so when OpenID is configured it has to wait
+		// for the IAM initialization below. Without OpenID nothing in the
+		// console depends on IAM being initialized - and a slow IAM
+		// backend (unreachable etcd, stalled LDAP store) must not delay
+		// the UI - so it starts in parallel instead.
+		consoleWaitsForIAM := openIDConfigured()
 
-		// Initialize Console UI
-		if globalBrowserEnabled {
+		startConsole := func() {
+			if !globalBrowserEnabled {
+				return
+			}
 			bootstrapTrace("initConsoleServer", func() {
 				srv, err := initConsoleServer()
 				if err != nil {
@@ -1009,6 +1015,18 @@ func serverMain(ctx *cli.Context) {
 					logger.FatalIf(newConsoleServerFn().Serve(), "Unable to initialize console server")
 				}()
 			})
+		}
+
+		if !consoleWaitsForIAM {
+			go startConsole()
+		}
+
+		bootstrapTrace("globalIAMSys.Init", func() {
+			globalIAMSys.Init(GlobalContext, newObject, globalEtcdClient, globalRefreshIAMInterval)
+		})
+
+		if consoleWaitsForIAM {
+			startConsole()
 		}
 
 		// if we see FTP args, start FTP if possible

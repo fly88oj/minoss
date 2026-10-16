@@ -169,7 +169,11 @@ func newHealRoutine() *healRoutine {
 	}
 
 	return &healRoutine{
-		tasks:   make(chan healTask),
+		// Buffered so a burst of scanner-discovered tasks survives a
+		// momentary worker saturation instead of being dropped by the
+		// noWait send path (the next scanner cycle would only rediscover
+		// them much later).
+		tasks:   make(chan healTask, workers*4),
 		workers: workers,
 	}
 }

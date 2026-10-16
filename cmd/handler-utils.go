@@ -318,7 +318,7 @@ func collectAPIStats(api string, f http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		resource, err := getResource(r.URL.Path, r.Host, globalDomainNames)
 		if err != nil {
-			defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+			defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 
 			apiErr := errorCodes.ToAPIErr(ErrUnsupportedHostHeader)
 			apiErr.Description = fmt.Sprintf("%s: %v", apiErr.Description, err)
@@ -428,7 +428,7 @@ func errorResponseHandler(w http.ResponseWriter, r *http.Request) {
 			HTTPStatusCode: http.StatusUpgradeRequired,
 		}, r.URL)
 	default:
-		defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+		defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 		defer atomic.AddUint64(&globalHTTPStats.rejectedRequestsInvalid, 1)
 
 		// When we are not running in S3 Express mode, generate appropriate error

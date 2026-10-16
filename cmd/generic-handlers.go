@@ -18,6 +18,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -117,7 +118,7 @@ func setRequestLimitMiddleware(h http.Handler) http.Handler {
 				tc.ResponseRecorder.LogErrBody = true
 			}
 
-			defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+			defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 			writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(ErrUnsupportedMetadata), r.URL)
 			return
 		}
@@ -128,7 +129,7 @@ func setRequestLimitMiddleware(h http.Handler) http.Handler {
 				tc.ResponseRecorder.LogErrBody = true
 			}
 
-			defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+			defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 			writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(ErrMetadataTooLarge), r.URL)
 			atomic.AddUint64(&globalHTTPStats.rejectedRequestsHeader, 1)
 			return
@@ -367,7 +368,7 @@ func setRequestValidityMiddleware(h http.Handler) http.Handler {
 				tc.ResponseRecorder.LogErrBody = true
 			}
 
-			defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+			defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 			invalidReq := errorCodes.ToAPIErr(ErrInvalidRequest)
 			invalidReq.Description = fmt.Sprintf("%s (%s)", invalidReq.Description, err)
 			writeErrorResponse(r.Context(), w, invalidReq, r.URL)
@@ -382,7 +383,7 @@ func setRequestValidityMiddleware(h http.Handler) http.Handler {
 				tc.ResponseRecorder.LogErrBody = true
 			}
 
-			defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+			defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 			writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(ErrInvalidResourceName), r.URL)
 			atomic.AddUint64(&globalHTTPStats.rejectedRequestsInvalid, 1)
 			return
@@ -398,7 +399,7 @@ func setRequestValidityMiddleware(h http.Handler) http.Handler {
 					tc.ResponseRecorder.LogErrBody = true
 				}
 
-				defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+				defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 				writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(ErrInvalidResourceName), r.URL)
 				atomic.AddUint64(&globalHTTPStats.rejectedRequestsInvalid, 1)
 				return
@@ -410,7 +411,7 @@ func setRequestValidityMiddleware(h http.Handler) http.Handler {
 				tc.ResponseRecorder.LogErrBody = true
 			}
 
-			defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+			defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 			invalidReq := errorCodes.ToAPIErr(ErrInvalidRequest)
 			invalidReq.Description = fmt.Sprintf("%s (request has multiple authentication types, please use one)", invalidReq.Description)
 			writeErrorResponse(r.Context(), w, invalidReq, r.URL)
@@ -425,7 +426,7 @@ func setRequestValidityMiddleware(h http.Handler) http.Handler {
 					tc.FuncName = "handler.ValidRequest"
 					tc.ResponseRecorder.LogErrBody = true
 				}
-				defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+				defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 				writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(ErrAllAccessDisabled), r.URL)
 				return
 			}
@@ -436,7 +437,7 @@ func setRequestValidityMiddleware(h http.Handler) http.Handler {
 					tc.FuncName = "handler.ValidRequest"
 					tc.ResponseRecorder.LogErrBody = true
 				}
-				defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+				defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 				writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(ErrInvalidBucketName), r.URL)
 				return
 			}
@@ -449,7 +450,7 @@ func setRequestValidityMiddleware(h http.Handler) http.Handler {
 					tc.ResponseRecorder.LogErrBody = false
 				}
 
-				defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+				defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 				writeErrorResponseHeadersOnly(w, errorCodes.ToAPIErr(ErrInsecureSSECustomerRequest))
 			} else {
 				if ok {
@@ -457,7 +458,7 @@ func setRequestValidityMiddleware(h http.Handler) http.Handler {
 					tc.ResponseRecorder.LogErrBody = true
 				}
 
-				defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+				defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 				writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(ErrInsecureSSECustomerRequest), r.URL)
 			}
 			return
@@ -513,7 +514,7 @@ func setBucketForwardingMiddleware(h http.Handler) http.Handler {
 		}
 		sr, err := globalDNSConfig.Get(bucket)
 		if err != nil {
-			defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+			defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 			if err == dns.ErrNoEntriesFound {
 				writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(ErrNoSuchBucket), r.URL)
 			} else {
@@ -618,7 +619,7 @@ func setUploadForwardingMiddleware(h http.Handler) http.Handler {
 				w.Header().Del(k)
 			}
 			ctx := newContext(r, w, "SiteReplicationUploadForwarding")
-			defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+			defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 			globalForwarder.ServeHTTP(w, r)
 			return
 		}

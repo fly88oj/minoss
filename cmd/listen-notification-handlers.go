@@ -19,6 +19,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -36,7 +37,7 @@ import (
 func (api objectAPIHandlers) ListenNotificationHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "ListenNotification")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	// Validate if bucket exists.
 	objAPI := api.ObjectAPI()

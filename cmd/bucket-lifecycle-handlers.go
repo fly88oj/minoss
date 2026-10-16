@@ -18,6 +18,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/xml"
 	"net/http"
 	"strconv"
@@ -40,7 +41,7 @@ const (
 func (api objectAPIHandlers) PutBucketLifecycleHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutBucketLifecycle")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objAPI := api.ObjectAPI()
 	if objAPI == nil {
@@ -141,7 +142,7 @@ func (api objectAPIHandlers) PutBucketLifecycleHandler(w http.ResponseWriter, r 
 func (api objectAPIHandlers) GetBucketLifecycleHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketLifecycle")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objAPI := api.ObjectAPI()
 	if objAPI == nil {
@@ -198,7 +199,7 @@ func (api objectAPIHandlers) GetBucketLifecycleHandler(w http.ResponseWriter, r 
 func (api objectAPIHandlers) DeleteBucketLifecycleHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "DeleteBucketLifecycle")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objAPI := api.ObjectAPI()
 	if objAPI == nil {

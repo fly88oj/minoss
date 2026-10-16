@@ -19,6 +19,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -42,7 +43,7 @@ import (
 // Add a replication configuration on the specified bucket as specified in https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketReplication.html
 func (api objectAPIHandlers) PutBucketReplicationConfigHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutBucketReplicationConfig")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -105,7 +106,7 @@ func (api objectAPIHandlers) PutBucketReplicationConfigHandler(w http.ResponseWr
 func (api objectAPIHandlers) GetBucketReplicationConfigHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketReplicationConfig")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -146,7 +147,7 @@ func (api objectAPIHandlers) GetBucketReplicationConfigHandler(w http.ResponseWr
 // ----------
 func (api objectAPIHandlers) DeleteBucketReplicationConfigHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "DeleteBucketReplicationConfig")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
 
@@ -199,7 +200,7 @@ func (api objectAPIHandlers) DeleteBucketReplicationConfigHandler(w http.Respons
 func (api objectAPIHandlers) GetBucketReplicationMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketReplicationMetrics")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -255,7 +256,7 @@ func (api objectAPIHandlers) GetBucketReplicationMetricsHandler(w http.ResponseW
 func (api objectAPIHandlers) GetBucketReplicationMetricsV2Handler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketReplicationMetricsV2")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -313,7 +314,7 @@ func (api objectAPIHandlers) GetBucketReplicationMetricsV2Handler(w http.Respons
 // already in progress it returns an error
 func (api objectAPIHandlers) ResetBucketReplicationStartHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "ResetBucketReplicationStart")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -448,7 +449,7 @@ func (api objectAPIHandlers) ResetBucketReplicationStartHandler(w http.ResponseW
 // This API is a MinIO only extension
 func (api objectAPIHandlers) ResetBucketReplicationStatusHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "ResetBucketReplicationStatus")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -518,7 +519,7 @@ func (api objectAPIHandlers) ResetBucketReplicationStatusHandler(w http.Response
 // ----------
 func (api objectAPIHandlers) ValidateBucketReplicationCredsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "ValidateBucketReplicationCreds")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]

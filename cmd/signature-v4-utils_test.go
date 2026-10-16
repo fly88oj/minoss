@@ -97,11 +97,20 @@ func TestCheckValid(t *testing.T) {
 		t.Fatalf("unable to attach policy to credential, %s", err)
 	}
 
-	time.Sleep(4 * time.Second)
-
-	policies, err := globalIAMSys.PolicyDBGet(ucreds.AccessKey)
-	if err != nil {
-		t.Fatalf("unable to get policy to credential, %s", err)
+	// PolicyDBSet updates the in-memory cache under the store lock, so the
+	// mapping is normally visible immediately; poll instead of paying a
+	// fixed sleep for the cases where a refresh cycle still lags.
+	deadline := time.Now().Add(4 * time.Second)
+	var policies []string
+	for {
+		policies, err = globalIAMSys.PolicyDBGet(ucreds.AccessKey)
+		if err != nil {
+			t.Fatalf("unable to get policy to credential, %s", err)
+		}
+		if len(policies) > 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 
 	if len(policies) == 0 {

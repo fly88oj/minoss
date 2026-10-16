@@ -18,6 +18,7 @@
 package cmd
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
@@ -32,7 +33,7 @@ import (
 // KMSStatusHandler - GET /minio/kms/v1/status
 func (a kmsAPIHandlers) KMSStatusHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "KMSStatus")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 	objectAPI, _ := validateAdminReq(ctx, w, r, policy.KMSStatusAction)
 	if objectAPI == nil {
 		return
@@ -59,7 +60,7 @@ func (a kmsAPIHandlers) KMSStatusHandler(w http.ResponseWriter, r *http.Request)
 // KMSMetricsHandler - GET /minio/kms/v1/metrics
 func (a kmsAPIHandlers) KMSMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "KMSMetrics")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objectAPI, _ := validateAdminReq(ctx, w, r, policy.KMSMetricsAction)
 	if objectAPI == nil {
@@ -86,7 +87,7 @@ func (a kmsAPIHandlers) KMSMetricsHandler(w http.ResponseWriter, r *http.Request
 // KMSAPIsHandler - GET /minio/kms/v1/apis
 func (a kmsAPIHandlers) KMSAPIsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "KMSAPIs")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objectAPI, _ := validateAdminReq(ctx, w, r, policy.KMSAPIAction)
 	if objectAPI == nil {
@@ -117,7 +118,7 @@ type versionResponse struct {
 // KMSVersionHandler - GET /minio/kms/v1/version
 func (a kmsAPIHandlers) KMSVersionHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "KMSVersion")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objectAPI, _ := validateAdminReq(ctx, w, r, policy.KMSVersionAction)
 	if objectAPI == nil {
@@ -147,7 +148,7 @@ func (a kmsAPIHandlers) KMSVersionHandler(w http.ResponseWriter, r *http.Request
 func (a kmsAPIHandlers) KMSCreateKeyHandler(w http.ResponseWriter, r *http.Request) {
 	// If env variable MINIO_KMS_SECRET_KEY is populated, prevent creation of new keys
 	ctx := newContext(r, w, "KMSCreateKey")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objectAPI, _ := validateAdminReq(ctx, w, r, policy.KMSCreateKeyAction)
 	if objectAPI == nil {
@@ -182,7 +183,7 @@ func (a kmsAPIHandlers) KMSCreateKeyHandler(w http.ResponseWriter, r *http.Reque
 // KMSListKeysHandler - GET /minio/kms/v1/key/list?pattern=<pattern>
 func (a kmsAPIHandlers) KMSListKeysHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "KMSListKeys")
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	// This only checks if the action (kms:ListKeys) is allowed, it does not check
 	// each key name against the policy's Resources. We check that below, once
@@ -233,7 +234,7 @@ func (a kmsAPIHandlers) KMSListKeysHandler(w http.ResponseWriter, r *http.Reques
 func (a kmsAPIHandlers) KMSKeyStatusHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "KMSKeyStatus")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 	objectAPI, _ := validateAdminReq(ctx, w, r, policy.KMSKeyStatusAction)
 	if objectAPI == nil {
 		return

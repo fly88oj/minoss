@@ -390,14 +390,31 @@ func getLocalDisksToHeal() (disksToHeal Endpoints) {
 	globalLocalDrivesMu.RLock()
 	localDrives := cloneDrives(globalLocalDrivesMap)
 	globalLocalDrivesMu.RUnlock()
-	for _, disk := range localDrives {
-		_, err := disk.DiskInfo(context.Background(), DiskInfoOptions{})
-		if errors.Is(err, errUnformattedDisk) {
-			disksToHeal = append(disksToHeal, disk.Endpoint())
-			continue
-		}
-		if h := disk.Healing(); h != nil && !h.Finished {
-			disksToHeal = append(disksToHeal, disk.Endpoint())
+
+	// Each probe is a DiskInfo round trip (a statvfs on the local disk);
+	// with a full drive count this runs on the startup critical path, so
+	// probe the drives concurrently. Distinct slice elements are written
+	// by their own goroutine only.
+	needsHeal := make([]bool, len(localDrives))
+	var wg sync.WaitGroup
+	for i := range localDrives {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := localDrives[i].DiskInfo(context.Background(), DiskInfoOptions{})
+			if errors.Is(err, errUnformattedDisk) {
+				needsHeal[i] = true
+				return
+			}
+			if h := localDrives[i].Healing(); h != nil && !h.Finished {
+				needsHeal[i] = true
+			}
+		}(i)
+	}
+	wg.Wait()
+	for i, heal := range needsHeal {
+		if heal {
+			disksToHeal = append(disksToHeal, localDrives[i].Endpoint())
 		}
 	}
 	if len(disksToHeal) == globalEndpoints.NEndpoints() {

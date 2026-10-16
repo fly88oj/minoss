@@ -185,6 +185,16 @@ func minioConfigToConsoleFeatures() {
 	}
 }
 
+// openIDConfigured reports whether any OpenID provider configuration is
+// present. It mirrors the input globalIAMSys.Init feeds to
+// openid.LookupConfig, without triggering the discovery itself.
+func openIDConfigured() bool {
+	globalServerConfigMu.RLock()
+	defer globalServerConfigMu.RUnlock()
+	kvsMap, ok := globalServerConfig[config.IdentityOpenIDSubSys]
+	return ok && !kvsMap[config.Default].Empty()
+}
+
 func buildOpenIDConsoleConfig() consoleoauth2.OpenIDPCfg {
 	pcfgs := globalIAMSys.OpenIDConfig.ProviderCfgs
 	m := make(map[string]consoleoauth2.ProviderConfig, len(pcfgs))
@@ -874,7 +884,29 @@ func handleKMSConfig() {
 		logger.Fatal(err, "Failed to connect to KMS")
 	}
 
-	if _, err = KMS.GenerateKey(GlobalContext, &kms.GenerateKeyRequest{}); errors.Is(err, kms.ErrKeyNotFound) {
+	// The liveness probe below is the first real RPC to the KMS and runs
+	// before the listener is bound; without a deadline, an unreachable or
+	// wedged KMS would hang the startup forever. Bound each attempt and
+	// retry briefly so a KMS that is still starting (e.g. after a host
+	// reboot) gets a chance, while a dead one fails loudly.
+	for attempt := 1; ; attempt++ {
+		probeCtx, cancel := context.WithTimeout(GlobalContext, 10*time.Second)
+		_, err = KMS.GenerateKey(probeCtx, &kms.GenerateKeyRequest{})
+		cancel()
+		if err == nil || errors.Is(err, kms.ErrKeyNotFound) {
+			break
+		}
+		if attempt >= 5 {
+			break
+		}
+		logger.Info("KMS not reachable yet, retrying in 5s (%d/5): %v", attempt, err)
+		select {
+		case <-time.After(5 * time.Second):
+		case <-GlobalContext.Done():
+			logger.Fatal(GlobalContext.Err(), "Server startup canceled upon user request")
+		}
+	}
+	if errors.Is(err, kms.ErrKeyNotFound) {
 		err = KMS.CreateKey(GlobalContext, &kms.CreateKeyRequest{Name: KMS.DefaultKey})
 	}
 	if err != nil && !errors.Is(err, kms.ErrKeyExists) && !errors.Is(err, kms.ErrPermission) {

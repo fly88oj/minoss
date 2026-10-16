@@ -740,23 +740,34 @@ func (s *TestSuiteIAM) TestSTSForRoot(c *check) {
 	}
 	userAdmClient.SetCustomTransport(s.TestSuiteCommon.client.Transport)
 
-	time.Sleep(2 * time.Second) // wait for listbuckets cache to be invalidated
-
-	accInfo, err := userAdmClient.AccountInfo(ctx, madmin.AccountOpts{})
-	if err != nil {
-		c.Fatalf("root user STS should be able to get account info: %v", err)
-	}
-
-	gotBuckets := set.NewStringSet()
-	for _, b := range accInfo.Buckets {
-		gotBuckets.Add(b.Name)
-		if !b.Access.Read || !b.Access.Write {
-			c.Fatalf("root user should have read and write access to bucket: %v", b.Name)
+	// The listBuckets cache can briefly serve stale results after the STS
+	// login; poll until it settles instead of paying a fixed 2s sleep on
+	// every run.
+	for attempt := 0; ; attempt++ {
+		accInfo, err := userAdmClient.AccountInfo(ctx, madmin.AccountOpts{})
+		if err != nil {
+			c.Fatalf("root user STS should be able to get account info: %v", err)
 		}
-	}
-	shouldHaveBuckets := set.CreateStringSet(bucket2, bucket)
-	if !gotBuckets.Equals(shouldHaveBuckets) {
-		c.Fatalf("root user should have access to all buckets")
+
+		gotBuckets := set.NewStringSet()
+		accessOK := true
+		for _, b := range accInfo.Buckets {
+			gotBuckets.Add(b.Name)
+			if !b.Access.Read || !b.Access.Write {
+				accessOK = false
+			}
+		}
+
+		if accessOK && gotBuckets.Equals(set.CreateStringSet(bucket2, bucket)) {
+			break
+		}
+		if attempt >= 20 { // ~2s ceiling, same budget the fixed sleep burned
+			if !accessOK {
+				c.Fatal("root user should have read and write access to buckets")
+			}
+			c.Fatal("root user should have access to all buckets")
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// This must fail.

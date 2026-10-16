@@ -29,6 +29,17 @@ import (
 	. "github.com/minio/minio/internal/lsync"
 )
 
+// testDur scales the coupled lock-hold/wait timings uniformly in -short
+// mode. The tests below assert relative ordering (hold time vs. acquire
+// timeout), which a uniform scale preserves, while full runs keep the
+// original values.
+func testDur(d time.Duration) time.Duration {
+	if testing.Short() {
+		return d / 10
+	}
+	return d
+}
+
 func testSimpleWriteLock(t *testing.T, duration time.Duration) (locked bool) {
 	ctx := t.Context()
 	lrwm := NewLRWMutex()
@@ -44,13 +55,13 @@ func testSimpleWriteLock(t *testing.T, duration time.Duration) (locked bool) {
 	// fmt.Println("2nd read lock acquired, waiting...")
 
 	go func() {
-		time.Sleep(2 * time.Second)
+		time.Sleep(testDur(2 * time.Second))
 		lrwm.RUnlock()
 		// fmt.Println("1st read lock released, waiting...")
 	}()
 
 	go func() {
-		time.Sleep(3 * time.Second)
+		time.Sleep(testDur(3 * time.Second))
 		lrwm.RUnlock()
 		// fmt.Println("2nd read lock released, waiting...")
 	}()
@@ -59,7 +70,7 @@ func testSimpleWriteLock(t *testing.T, duration time.Duration) (locked bool) {
 	locked = lrwm.GetLock(ctx, "", "", duration)
 	if locked {
 		// fmt.Println("Write lock acquired, waiting...")
-		time.Sleep(1 * time.Second)
+		time.Sleep(testDur(1 * time.Second))
 
 		lrwm.Unlock()
 	} else {
@@ -69,7 +80,7 @@ func testSimpleWriteLock(t *testing.T, duration time.Duration) (locked bool) {
 }
 
 func TestSimpleWriteLockAcquired(t *testing.T) {
-	locked := testSimpleWriteLock(t, 5*time.Second)
+	locked := testSimpleWriteLock(t, testDur(5*time.Second))
 
 	expected := true
 	if locked != expected {
@@ -78,7 +89,7 @@ func TestSimpleWriteLockAcquired(t *testing.T) {
 }
 
 func TestSimpleWriteLockTimedOut(t *testing.T) {
-	locked := testSimpleWriteLock(t, time.Second)
+	locked := testSimpleWriteLock(t, testDur(time.Second))
 
 	expected := false
 	if locked != expected {
@@ -96,7 +107,7 @@ func testDualWriteLock(t *testing.T, duration time.Duration) (locked bool) {
 	}
 
 	go func() {
-		time.Sleep(2 * time.Second)
+		time.Sleep(testDur(2 * time.Second))
 		lrwm.Unlock()
 		// fmt.Println("Initial write lock released, waiting...")
 	}()
@@ -105,7 +116,7 @@ func testDualWriteLock(t *testing.T, duration time.Duration) (locked bool) {
 	locked = lrwm.GetLock(ctx, "", "", duration)
 	if locked {
 		// fmt.Println("2nd write lock acquired, waiting...")
-		time.Sleep(time.Second)
+		time.Sleep(testDur(time.Second))
 
 		lrwm.Unlock()
 	} else {
@@ -115,7 +126,7 @@ func testDualWriteLock(t *testing.T, duration time.Duration) (locked bool) {
 }
 
 func TestDualWriteLockAcquired(t *testing.T) {
-	locked := testDualWriteLock(t, 3*time.Second)
+	locked := testDualWriteLock(t, testDur(3*time.Second))
 
 	expected := true
 	if locked != expected {
@@ -124,7 +135,7 @@ func TestDualWriteLockAcquired(t *testing.T) {
 }
 
 func TestDualWriteLockTimedOut(t *testing.T) {
-	locked := testDualWriteLock(t, time.Second)
+	locked := testDualWriteLock(t, testDur(time.Second))
 
 	expected := false
 	if locked != expected {

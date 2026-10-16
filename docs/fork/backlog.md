@@ -556,3 +556,45 @@ Remaining on purpose:
 Verification: build/vet green, whole-module golangci-lint 0 issues,
 internal suites + cmd broad suite (117s) green, govulncheck 0 reachable /
 0 imported (1 informational in an uncalled module).
+
+## Performance round 2 deferrals (2026-10-15)
+
+Deferred from docs/fork/2026-10-15-performance-optimization.md, in rough
+value order. Each needs its own design/verification pass:
+
+- **IAM store lock surgery** (carried over from round 1, L2):
+  `PolicyDBGet` does disk I/O while holding the store RLock on cache miss
+  (cmd/iam-store.go:816-854), and every non-root request takes 3 separate
+  RLocks (GetUser / PolicyDBGet / MergePolicies). Fix shape: singleflight
+  the miss loads outside the lock; move `iamUsersMap`/`iamSTSAccountsMap`
+  to `xsync.MapOf` like the policy map already is. Risk: cache-insert
+  atomicity vs the periodic full swap.
+- **Session policy re-parse per request** (cmd/iam.go:2395,2451): STS/svcAcc
+  requests with a session policy re-run base64+JSON parse+validate on every
+  call. Cache keyed by (accessKey, policy hash) with invalidation hooked to
+  IAM refresh events.
+- **NS lock `getSource` per acquisition** (cmd/namespace-lock.go:316-329):
+  runtime.Caller + fmt.Sprintf on every object lock; compute lazily or
+  cache per callsite. Diagnostic-only data.
+- **Small-object PUT buffers un-pooled** (cmd/erasure-object.go:1384): size
+  < 1MiB allocates per PUT; tiered sync.Pool (4/16/64/128KiB) following the
+  ODirect pool pattern in internal/ioutil.
+- **multiWriter slow-disk head-of-line blocking** (cmd/erasure-encode.go):
+  2MiB ring buffer per disk paces the encode loop at the slowest drive.
+  High risk (quorum/rename ordering); needs warp A/B before touching.
+- **Scanner disk truncation** (cmd/erasure.go:471): usage scans drop
+  `disks[maxProcs:]` instead of batching - lengthens effective scan cycle.
+  Behavior change; verify with data-usage output comparison.
+- **warp / `mc admin speedtest` nightly regression gate** + docs/tuning
+  refresh to the 2026 official tuned profile (64MB TCP buffers, timestamps=1,
+  somaxconn 65535, split 10G/100G tiers). Pure additive work.
+- **Go 1.27 evaluation**: size-specialized malloc (up to -30% small-object
+  alloc), json/v2 GA. Next dependency window, not standalone.
+- **32-bit platform reversal** (if ever needed): fork-patch
+  `aead.dev/mtls key.go:91` to compare `int64(priv.E) > math.MaxUint32`,
+  add a replace to the fork, re-add linux/386, linux/arm, linux/mips to
+  buildscripts/cross-compile.sh and the release.yml matrix.
+- **go-systemd pin upkeep**: the go.mod replace to v22.6.0 exists only
+  because v22.7.0 breaks GOOS=netbsd (`unix.CLOCK_MONOTONIC` unexported
+  there). Re-check on the next x/sys/go-systemd bump and drop the pin
+  once upstream fixes the constant for netbsd.

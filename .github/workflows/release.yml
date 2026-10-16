@@ -16,6 +16,11 @@ jobs:
     strategy:
       matrix:
         include:
+          # 32-bit targets (linux/arm, linux/386, linux/mips) removed with
+          # the 2026-10 dependency refresh: aead.dev/mtls v0.4.0 does not
+          # compile on 32-bit and no newer release exists. Keep in step
+          # with buildscripts/cross-compile.sh; netbsd is covered by the
+          # go-systemd replace pin in go.mod.
           - os: linux
             arch: amd64
           - os: linux
@@ -25,13 +30,7 @@ jobs:
           - os: linux
             arch: s390x
           - os: linux
-            arch: arm
-          - os: linux
-            arch: 386
-          - os: linux
             arch: mips64
-          - os: linux
-            arch: mips
           - os: linux
             arch: riscv64
           - os: darwin

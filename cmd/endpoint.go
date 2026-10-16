@@ -30,6 +30,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -624,6 +625,17 @@ func (endpoints Endpoints) UpdateIsLocal() error {
 		case <-globalOSSignalCh:
 			return fmt.Errorf("The endpoint resolution got interrupted")
 		default:
+			// Endpoint hostnames are independent DNS lookups; resolving
+			// them one by one turned startup into N x DNS latency on the
+			// critical path, so each unresolved endpoint is probed in its
+			// own goroutine. Shared counters are folded in under mu, and
+			// per-element writes (resolvedList[i], endpoints[i]) are only
+			// read again after wg.Wait().
+			var (
+				mu     sync.Mutex
+				retErr error
+				wg     sync.WaitGroup
+			)
 			for i, resolved := range resolvedList {
 				if resolved {
 					// Continue if host is already resolved.
@@ -631,74 +643,91 @@ func (endpoints Endpoints) UpdateIsLocal() error {
 				}
 
 				if endpoints[i].Host == "" {
+					mu.Lock()
 					resolvedList[i] = true
 					endpoints[i].IsLocal = true
 					epsResolved++
-					if !foundLocal {
-						foundLocal = true
-					}
+					foundLocal = true
+					mu.Unlock()
 					continue
 				}
 
-				// Log the message to console about the host resolving
-				reqInfo := (&logger.ReqInfo{}).AppendTags(
-					"host",
-					endpoints[i].Hostname(),
-				)
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
 
-				if orchestrated && hostResolveToLocalhost(endpoints[i]) {
-					// time elapsed
-					timeElapsed := time.Since(startTime)
-					// log error only if more than a second has elapsed
-					if timeElapsed > time.Second {
-						reqInfo.AppendTags("elapsedTime",
-							humanize.RelTime(startTime,
-								startTime.Add(timeElapsed),
-								"elapsed",
-								"",
-							))
-						ctx := logger.SetReqInfo(GlobalContext,
-							reqInfo)
-						bootLogOnceIf(ctx, fmt.Errorf("%s resolves to localhost in a containerized deployment, waiting for it to resolve to a valid IP",
-							endpoints[i].Hostname()), endpoints[i].Hostname(), logger.ErrorKind)
+					// Log the message to console about the host resolving
+					reqInfo := (&logger.ReqInfo{}).AppendTags(
+						"host",
+						endpoints[i].Hostname(),
+					)
+
+					if orchestrated && hostResolveToLocalhost(endpoints[i]) {
+						// time elapsed
+						timeElapsed := time.Since(startTime)
+						// log error only if more than a second has elapsed
+						if timeElapsed > time.Second {
+							reqInfo.AppendTags("elapsedTime",
+								humanize.RelTime(startTime,
+									startTime.Add(timeElapsed),
+									"elapsed",
+									"",
+								))
+							ctx := logger.SetReqInfo(GlobalContext,
+								reqInfo)
+							bootLogOnceIf(ctx, fmt.Errorf("%s resolves to localhost in a containerized deployment, waiting for it to resolve to a valid IP",
+								endpoints[i].Hostname()), endpoints[i].Hostname(), logger.ErrorKind)
+						}
+
+						return
 					}
 
-					continue
-				}
+					// return err if not Docker or Kubernetes
+					// We use IsDocker() to check for Docker environment
+					// We use IsKubernetes() to check for Kubernetes environment
+					isLocal, err := isLocalHost(endpoints[i].Hostname(),
+						endpoints[i].Port(),
+						globalMinioPort,
+					)
 
-				// return err if not Docker or Kubernetes
-				// We use IsDocker() to check for Docker environment
-				// We use IsKubernetes() to check for Kubernetes environment
-				isLocal, err := isLocalHost(endpoints[i].Hostname(),
-					endpoints[i].Port(),
-					globalMinioPort,
-				)
-				if err != nil && !orchestrated {
-					return err
-				}
-				if err != nil {
-					// time elapsed
-					timeElapsed := time.Since(startTime)
-					// log error only if more than a second has elapsed
-					if timeElapsed > time.Second {
-						reqInfo.AppendTags("elapsedTime",
-							humanize.RelTime(startTime,
-								startTime.Add(timeElapsed),
-								"elapsed",
-								"",
-							))
-						ctx := logger.SetReqInfo(GlobalContext,
-							reqInfo)
-						bootLogOnceIf(ctx, err, endpoints[i].Hostname(), logger.ErrorKind)
+					mu.Lock()
+					defer mu.Unlock()
+					if err != nil && !orchestrated {
+						if retErr == nil {
+							retErr = err
+						}
+						return
 					}
-				} else {
+					if err != nil {
+						// time elapsed
+						timeElapsed := time.Since(startTime)
+						// log error only if more than a second has elapsed
+						if timeElapsed > time.Second {
+							reqInfo.AppendTags("elapsedTime",
+								humanize.RelTime(startTime,
+									startTime.Add(timeElapsed),
+									"elapsed",
+									"",
+								))
+							ctx := logger.SetReqInfo(GlobalContext,
+								reqInfo)
+							bootLogOnceIf(ctx, err, endpoints[i].Hostname(), logger.ErrorKind)
+						}
+						return
+					}
+
 					resolvedList[i] = true
 					endpoints[i].IsLocal = isLocal
 					epsResolved++
-					if !foundLocal {
-						foundLocal = isLocal
+					if isLocal {
+						foundLocal = true
 					}
-				}
+				}(i)
+			}
+
+			wg.Wait()
+			if retErr != nil {
+				return retErr
 			}
 
 			// Wait for the tick, if the there exist a local endpoint in discovery.

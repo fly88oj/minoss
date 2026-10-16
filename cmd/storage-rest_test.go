@@ -353,10 +353,16 @@ func newStorageRESTHTTPServerClient(t testing.TB) *storageRESTClient {
 		t.Fatal(err)
 	}
 
+	// The grid connection is established asynchronously; bound the wait so
+	// a failed handshake fails the test instead of hanging the package.
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		_, err := restClient.DiskInfo(t.Context(), DiskInfoOptions{})
 		if err == nil || errors.Is(err, errUnformattedDisk) {
 			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("storage REST client never connected: %v", err)
 		}
 		time.Sleep(time.Duration(rand.Float64() * float64(100*time.Millisecond)))
 	}

@@ -116,9 +116,7 @@ func initTestErasureObjLayer(ctx context.Context) (ObjectLayer, []string, error)
 	}
 
 	// Make objLayer available to all internal services via globalObjectAPI.
-	globalObjLayerMutex.Lock()
-	globalObjectAPI = objLayer
-	globalObjLayerMutex.Unlock()
+	setObjectLayer(objLayer)
 	return objLayer, erasureDirs, nil
 }
 

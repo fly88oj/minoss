@@ -632,7 +632,7 @@ func setAuthMiddleware(h http.Handler) http.Handler {
 				// All our internal APIs are sensitive towards Date
 				// header, for all requests where Date header is not
 				// present we will reject such clients.
-				defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+				defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 				writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(errCode), r.URL)
 				atomic.AddUint64(&globalHTTPStats.rejectedRequestsTime, 1)
 				return
@@ -646,7 +646,7 @@ func setAuthMiddleware(h http.Handler) http.Handler {
 					tc.ResponseRecorder.LogErrBody = true
 				}
 
-				defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+				defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 				writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(ErrRequestTimeTooSkewed), r.URL)
 				atomic.AddUint64(&globalHTTPStats.rejectedRequestsTime, 1)
 				return
@@ -668,7 +668,7 @@ func setAuthMiddleware(h http.Handler) http.Handler {
 			tc.ResponseRecorder.LogErrBody = true
 		}
 
-		defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+		defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 		writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(ErrSignatureVersionNotSupported), r.URL)
 		atomic.AddUint64(&globalHTTPStats.rejectedRequestsAuth, 1)
 	})

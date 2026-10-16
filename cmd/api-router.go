@@ -53,15 +53,20 @@ func setConsoleSrv(srv *consoleapi.Server) {
 }
 
 func newObjectLayerFn() ObjectLayer {
-	globalObjLayerMutex.RLock()
-	defer globalObjLayerMutex.RUnlock()
-	return globalObjectAPI
+	// Hot path (every API request): read via atomic snapshot instead of
+	// taking globalObjLayerMutex.
+	if p := globalObjectAPI.Load(); p != nil {
+		return *p
+	}
+	return nil
 }
 
 func setObjectLayer(o ObjectLayer) {
-	globalObjLayerMutex.Lock()
-	globalObjectAPI = o
-	globalObjLayerMutex.Unlock()
+	if o == nil {
+		globalObjectAPI.Store(nil)
+		return
+	}
+	globalObjectAPI.Store(&o)
 }
 
 // objectAPIHandlers implements and provides http handlers for S3 API.

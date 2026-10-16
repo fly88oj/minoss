@@ -19,6 +19,7 @@ package dsync
 
 import (
 	"context"
+	"flag"
 	"math/rand"
 	"os"
 	"sync"
@@ -28,7 +29,12 @@ import (
 	"github.com/google/uuid"
 )
 
-const (
+// Every hold/wait in these tests is expressed in multiples of the values
+// below, so scaling them uniformly in -short mode preserves the relative
+// ordering the assertions depend on while trimming wall-clock time. The
+// timeouts stay far above a loopback RPC round trip even at 1/5 scale.
+// (Scaled in TestMain: testing.Short() is not callable at init time.)
+var (
 	testDrwMutexAcquireTimeout         = 250 * time.Millisecond
 	testDrwMutexRefreshCallTimeout     = 250 * time.Millisecond
 	testDrwMutexUnlockCallTimeout      = 250 * time.Millisecond
@@ -38,6 +44,21 @@ const (
 
 // TestMain initializes the testing framework
 func TestMain(m *testing.M) {
+	// testing.Short() panics before the flags are parsed, and TestMain runs
+	// ahead of m.Run()'s implicit flag.Parse().
+	flag.Parse()
+	if testing.Short() {
+		testDrwMutexAcquireTimeout /= 5
+		testDrwMutexRefreshCallTimeout /= 5
+		testDrwMutexUnlockCallTimeout /= 5
+		testDrwMutexForceUnlockCallTimeout /= 5
+		testDrwMutexRefreshInterval /= 5
+		// Contended acquires back off on this floor (default 250ms, capped
+		// at 5s) - the hammer tests block constantly, so it dominates the
+		// package runtime. Loopback RPCs need far less headroom.
+		lockRetryMinInterval = 25 * time.Millisecond
+		lockRetryBackOff = backoffWait(lockRetryMinInterval, 10*time.Millisecond, 500*time.Millisecond)
+	}
 	startLockServers()
 
 	// Initialize locker clients for dsync.

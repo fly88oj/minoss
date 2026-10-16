@@ -73,7 +73,7 @@ func (api objectAPIHandlers) ListObjectVersionsMHandler(w http.ResponseWriter, r
 func (api objectAPIHandlers) listObjectVersionsHandler(w http.ResponseWriter, r *http.Request, metadata bool) {
 	ctx := newContext(r, w, "ListObjectVersions")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -158,7 +158,7 @@ func (api objectAPIHandlers) ListObjectsV2Handler(w http.ResponseWriter, r *http
 
 // listObjectsV2Handler performs listing either with or without extra metadata.
 func (api objectAPIHandlers) listObjectsV2Handler(ctx context.Context, w http.ResponseWriter, r *http.Request, metadata bool) {
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
@@ -273,7 +273,7 @@ func proxyRequestByNodeIndex(ctx context.Context, w http.ResponseWriter, r *http
 func (api objectAPIHandlers) ListObjectsV1Handler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "ListObjectsV1")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]

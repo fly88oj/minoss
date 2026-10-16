@@ -18,6 +18,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/xml"
 	"io"
 	"net/http"
@@ -39,7 +40,7 @@ const (
 func (api objectAPIHandlers) GetBucketNotificationHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "GetBucketNotification")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	vars := mux.Vars(r)
 	bucketName := vars["bucket"]
@@ -107,7 +108,7 @@ func (api objectAPIHandlers) GetBucketNotificationHandler(w http.ResponseWriter,
 func (api objectAPIHandlers) PutBucketNotificationHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "PutBucketNotification")
 
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
+	defer func(ctx context.Context) { logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r)) }(ctx)
 
 	objectAPI := api.ObjectAPI()
 	if objectAPI == nil {

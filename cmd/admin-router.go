@@ -100,7 +100,7 @@ func adminMiddleware(f http.HandlerFunc, flags ...hFlag) http.HandlerFunc {
 		// Update request context with `logger.ReqInfo`.
 		r = r.WithContext(newContext(r, w, handlerName))
 
-		defer logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r))
+		defer func() { logger.AuditLog(r.Context(), w, r, mustGetClaimsFromToken(r)) }()
 
 		// Check if object layer is available, if not return error early.
 		if !handlerFlags.Has(noObjLayerFlag) {

@@ -14,31 +14,84 @@ concurrency:
 permissions:
   contents: read
 
+# The jobs deliberately fan out instead of chaining `make` / `make test` /
+# `make test-race` inside one runner: they are independent gates, and the
+# old serial layout also ran the `verifiers` prerequisite twice (once per
+# make invocation). `make test`/`make test-race` no longer depend on
+# `verifiers`, so each job below pays for exactly one gate. The
+# docs/debugging submodules gate lives in go.yml to avoid a second run.
 jobs:
   build:
-    name: Go ${{ matrix.go-version }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        go-version: [1.26.x]
-        os: [ubuntu-latest]
+    name: Build
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: 1.26.x
           check-latest: true
-      - name: Build on ${{ matrix.os }}
-        if: matrix.os == 'ubuntu-latest'
+          cache: true
+      - name: Build
+        env:
+          CGO_ENABLED: 0
+          GO111MODULE: on
+        run: make build
+
+  verifiers:
+    name: Lint and codegen drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.x
+          check-latest: true
+          cache: true
+      # Key must stay in sync with GOLANGCI_VERSION in the Makefile.
+      - name: Cache golangci-lint
+        uses: actions/cache@v4
+        with:
+          path: .bin/golangci
+          key: golangci-v2.14.0
+      - name: Lint and codegen drift
+        run: |
+          sudo sysctl net.ipv6.conf.all.disable_ipv6=0
+          sudo sysctl net.ipv6.conf.default.disable_ipv6=0
+          make lint check-gen
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.x
+          check-latest: true
+          cache: true
+      - name: Unit tests
         env:
           CGO_ENABLED: 0
           GO111MODULE: on
         run: |
-          sudo apt install jq -y
           sudo sysctl net.ipv6.conf.all.disable_ipv6=0
           sudo sysctl net.ipv6.conf.default.disable_ipv6=0
-          make
           make test TEST_FLAGS=-count=1
+
+  test-race:
+    name: Unit tests (race)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.x
+          check-latest: true
+          cache: true
+      - name: Unit tests under -race
+        run: |
+          sudo sysctl net.ipv6.conf.all.disable_ipv6=0
+          sudo sysctl net.ipv6.conf.default.disable_ipv6=0
           make test-race
 
   no-new-globals:
@@ -47,6 +100,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Full history on purpose: the three-dot diff below needs a real
+          # merge-base, and shallow grafts break it. This job runs parallel
+          # to the test jobs, so the bigger clone is off the critical path.
           fetch-depth: 0
       - name: Check additions
         run: |
