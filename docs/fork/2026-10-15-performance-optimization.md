@@ -159,6 +159,21 @@ v3.8.1，replace 不级联）。发布二进制因此少 3 个 32 位变体—�
 | 并发 | 50 worker × 4 轮 put+get+校验（200 对象）零错误，0.4s |
 | console | 解耦改动后在容器内同样正常（HTTP 200） |
 
+### 补充验证（2026-10-16，针对改动后遗留的验证缺口）
+
+- **race 检测**（改动后首次）：`go test -race -count=1 -short -p 2` 覆盖
+  cmd + dsync/lsync/ioutil/event 树/grid/ringbuffer/bpool——**9 包全绿，
+  0 数据竞争**（cmd 223s，总 6 分钟）。全量 75 包 race 仍属 CI 职责。
+- check-gen（go generate + tidy 漂移）：干净。
+- govulncheck：0 可达 / 0 导入（go-systemd 降级与 yaml 切换未引入
+  风险；1 个不可达信息项，与刷新前一致）。
+- 已知未覆盖（后续项）：真实 KES 不可达场景的 KMS 超时行为、OpenID
+  已配置时 console 等待分支（无外部 IdP 环境）、audit targets 非空时
+  lazy defer 的链路、TLS/K8s/跨站点复制/batch 端到端提交、release.yml
+  全链路（建议 dry-run tag）。CI 在 pull_request-only 触发器下不会为
+  direct-push 运行——是否加 `push: branches: [master]` 触发待维护者
+  决策。
+
 ## 明确暂缓（记入 backlog）
 
 - IAM 存储锁内磁盘 I/O（PolicyDBGet miss 路径）与每请求 3 次 RLock 的
