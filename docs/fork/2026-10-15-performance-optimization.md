@@ -144,6 +144,21 @@ v3.8.1，replace 不级联）。发布二进制因此少 3 个 32 位变体—�
 - yaml 修复回归验证：TestParseBatchJobReplicate/Expire ✓（go.mod 变更后
   复跑）
 
+### 多容器分布式实测（2026-10-16 补充，HEAD=33be22cbf）
+
+4 × alpine:3.19 容器（各自命名卷，bridge 网络主机名 minio1..4）组成
+单 set 4 盘分布式纠删集群，二进制为本 HEAD 现编译。Docker Hub 不可达，
+基础镜像用本地缓存。通过 minio-go/madmin-go 实测：
+
+| 阶段 | 结果 |
+|---|---|
+| 冷启动成集群 | 4 节点各 ~1s ready；`/minio/health/cluster` 200（并行 endpoint 解析 + bootstrap 对等校验路径均在容器 DNS 下工作） |
+| 常规操作 | 建桶；PUT 1MiB + 12MiB（multipart 走 erasure 分片）；GET 后 SHA256 逐一校验一致；List 正确 |
+| 单节点宕机 | `docker stop minio4`：cluster health 仍 200，宕机期间 PUT/GET+校验全部成功（4 盘 EC 2+2 预期内） |
+| 节点回归+自愈 | `docker start minio4`：~2s 重新就绪，ServerInfo 4/4 盘 state=ok（后台 heal 已补齐），madmin Heal API 正常，愈后读取校验通过 |
+| 并发 | 50 worker × 4 轮 put+get+校验（200 对象）零错误，0.4s |
+| console | 解耦改动后在容器内同样正常（HTTP 200） |
+
 ## 明确暂缓（记入 backlog）
 
 - IAM 存储锁内磁盘 I/O（PolicyDBGet miss 路径）与每请求 3 次 RLock 的
