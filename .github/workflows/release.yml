@@ -59,7 +59,11 @@ jobs:
         run: |
           # Tag RELEASE.YYYY-MM-DDTHH-MM-SSZ -> RFC3339 version + matching release tag.
           VTIME=$(echo "${GITHUB_REF_NAME}" | sed 's/^RELEASE\.//; s/\([0-9]\+\)-\([0-9]\+\)-\([0-9]\+\)T\([0-9]\+\)-\([0-9]\+\)-\([0-9]\+\)Z/\1-\2-\3T\4:\5:\6Z/')
-          LDFLAGS="$(MINIO_RELEASE=RELEASE go run buildscripts/gen-ldflags.go "$VTIME")"
+          # gen-ldflags is a host tool: build it for the runner first, or the
+          # GOOS/GOARCH target env above makes `go run` emit an unexecutable
+          # cross-compiled helper (exec format error — first tag run 44070524826).
+          GOOS= GOARCH= go build -o /tmp/gen-ldflags buildscripts/gen-ldflags.go
+          LDFLAGS="$(MINIO_RELEASE=RELEASE /tmp/gen-ldflags "$VTIME")"
           ext=""
           if [ "${{ matrix.os }}" = "windows" ]; then ext=".exe"; fi
           go build -trimpath --ldflags "${LDFLAGS}" -o "minio-${{ matrix.os }}-${{ matrix.arch }}${ext}"
