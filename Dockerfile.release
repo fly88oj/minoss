@@ -22,7 +22,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 # A static curl is needed by the health/liveness probes.
 COPY dockerscripts/download-static-curl.sh /build/download-static-curl
-RUN chmod +x /build/download-static-curl && \
+# The build stage is alpine: it ships neither bash (the script's shebang) nor a
+# curl to bootstrap the static one with — both must come from apk or the RUN
+# dies with exit 127 (first image build, run 44071883366).
+RUN apk add --no-cache bash curl && \
+    chmod +x /build/download-static-curl && \
     /build/download-static-curl
 
 FROM registry.access.redhat.com/ubi9/ubi-micro:latest
